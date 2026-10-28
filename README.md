@@ -11,9 +11,12 @@
    - Les amis scannent le QR Code avec l'appareil photo de leur téléphone pour rejoindre immédiatement la partie.
    - Pas de compte, pas de mot de passe, pas de téléchargement sur l'App Store / Play Store.
 
-2. **Rôles Asymétriques & Tension Maximale** :
-   - **Fuyard (Runner)** : Doit survivre au compte à rebours dans la zone délimitée.
-   - **Chasseurs (Hunters)** : Doivent encercler et capturer le fuyard. Ils voient la position de leurs coéquipiers en temps réel pour se coordonner.
+2. **Mode Joueurs Illimité & Rôles Asymétriques** :
+   - **Aucune limite de joueurs** : Jouez à 5, 10, 20, 50 potes ou plus dans la même partie !
+   - **Multi-Fuyards simultanés** : Chaque fuyard a son **propre code secret à 4 chiffres unique** (ex: Lucas a `7419`, Thomas a `3820`).
+   - **Mode Contagion / Infection IRL** : Dès qu'un fuyard est capturé (son code est entré par un chasseur), il est **infecté et devient immédiatement Chasseur** pour traquer ses anciens alliés ! Zéro ennui sur la touche : tout le monde joue sans interruption.
+   - **Écran Chasseurs** : Compteur de fuyards restants en direct et affichage des impulsions sonar de tous les fuyards encore en liberté.
+   - **Écran Fuyards** : Coopération tactique avec visibilité mutuelle entre fuyards sur la carte sombre.
 
 3. **Radar Sonar Périodique (Anti-Camping & Anti-Cheat)** :
    - Le fuyard **n'est pas** traqué en continu (ce qui ruinerait le jeu en 2 minutes).
