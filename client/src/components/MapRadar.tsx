@@ -192,23 +192,38 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     }
 
     const markerColor = isRunner ? '#06b6d4' : '#f59e0b';
+    const roleIcon = isRunner ? '🏃' : '🏹';
     const markerHtml = `
-      <div style="
-        position: relative;
-        width: 18px;
-        height: 18px;
-        background: ${markerColor};
-        border: 2px solid #ffffff;
-        border-radius: 50%;
-        box-shadow: 0 0 14px ${markerColor};
-      "></div>
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="
+          position: relative;
+          width: 20px;
+          height: 20px;
+          background: ${markerColor};
+          border: 3px solid #ffffff;
+          border-radius: 50%;
+          box-shadow: 0 0 16px ${markerColor}, 0 0 30px ${markerColor};
+        "></div>
+        <span style="
+          margin-top: 2px;
+          font-size: 10px;
+          font-weight: bold;
+          color: #ffffff;
+          background: rgba(0,0,0,0.85);
+          border: 1px solid ${markerColor};
+          padding: 1px 6px;
+          border-radius: 6px;
+          white-space: nowrap;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        ">${roleIcon} Moi</span>
+      </div>
     `;
 
     const icon = L.divIcon({
       html: markerHtml,
       className: 'custom-user-marker',
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
+      iconSize: [60, 40],
+      iconAnchor: [30, 10],
     });
 
     if (userMarkerRef.current) {
@@ -242,6 +257,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
 
     players.forEach((player) => {
       if (player.id !== currentUserId && player.position) {
+        // En mode chasseur : voir tous les autres chasseurs
+        // En mode fuyard : voir tous les autres fuyards
         const isTeammate =
           (isRunner && player.role === 'runner') ||
           (!isRunner && player.role === 'hunter');
@@ -249,34 +266,38 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         if (isTeammate) {
           const color = player.role === 'runner' ? '#06b6d4' : '#f97316';
           const labelColor = player.role === 'runner' ? '#a5f3fc' : '#fed7aa';
+          const roleBadge = player.role === 'runner' ? '🏃' : '🏹';
 
           const markerHtml = `
             <div style="display: flex; flex-direction: column; align-items: center;">
               <div style="
-                width: 14px;
-                height: 14px;
+                width: 16px;
+                height: 16px;
                 background: ${color};
-                border: 2px solid #fff;
+                border: 2px solid #ffffff;
                 border-radius: 50%;
-                box-shadow: 0 0 8px ${color};
+                box-shadow: 0 0 12px ${color};
               "></div>
               <span style="
                 margin-top: 2px;
                 font-size: 9px;
+                font-weight: 600;
                 color: ${labelColor};
-                background: rgba(0,0,0,0.7);
-                padding: 1px 4px;
+                background: rgba(0,0,0,0.85);
+                border: 1px solid rgba(255,255,255,0.15);
+                padding: 1px 5px;
                 border-radius: 4px;
                 white-space: nowrap;
-              ">${player.name}</span>
+                box-shadow: 0 2px 4px rgba(0,0,0,0.6);
+              ">${roleBadge} ${player.name}</span>
             </div>
           `;
 
           const icon = L.divIcon({
             html: markerHtml,
             className: 'teammate-marker',
-            iconSize: [40, 26],
-            iconAnchor: [20, 7],
+            iconSize: [60, 36],
+            iconAnchor: [30, 8],
           });
 
           L.marker([player.position.lat, player.position.lng], {

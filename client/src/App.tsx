@@ -44,24 +44,39 @@ export const App: React.FC = () => {
     }
   }, [feedback, clearFeedback]);
 
+  const [manualPosition, setManualPosition] = React.useState<{ lat: number; lng: number } | null>(null);
+
   const currentPlayer = roomState?.players.find((p) => p.id === playerId);
   const isRunner = currentPlayer?.role === 'runner';
 
+  // Position effective : GPS réel, sinon déplacement manuel/simulation, sinon position serveur
+  const effectivePosition =
+    position ||
+    manualPosition ||
+    currentPlayer?.position ||
+    roomState?.settings.zoneCenter ||
+    null;
+
+  const handleManualPositionChange = (lat: number, lng: number) => {
+    setManualPosition({ lat, lng });
+    updatePosition(lat, lng, 5);
+  };
+
   // Centre automatiquement la zone de jeu sur la position GPS réelle de l'hôte
   useEffect(() => {
-    if (position && currentPlayer?.isHost && roomState?.state === 'lobby') {
+    if (effectivePosition && currentPlayer?.isHost && roomState?.state === 'lobby') {
       if (
         Math.abs(roomState.settings.zoneCenter.lat - 48.8584) < 0.001 &&
         Math.abs(roomState.settings.zoneCenter.lng - 2.2945) < 0.001
       ) {
-        updateSettings({ zoneCenter: position });
+        updateSettings({ zoneCenter: effectivePosition });
       }
     }
-  }, [position, currentPlayer?.isHost, roomState?.state, roomState?.settings.zoneCenter, updateSettings]);
+  }, [effectivePosition, currentPlayer?.isHost, roomState?.state, roomState?.settings.zoneCenter, updateSettings]);
 
   const handleStartGame = () => {
-    if (position && currentPlayer?.isHost) {
-      updateSettings({ zoneCenter: position });
+    if (effectivePosition && currentPlayer?.isHost) {
+      updateSettings({ zoneCenter: effectivePosition });
     }
     startGame();
   };
@@ -119,7 +134,7 @@ export const App: React.FC = () => {
 
       {/* Carte Leaflet Radar OLED plein écran */}
       <MapRadar
-        userPosition={position}
+        userPosition={effectivePosition}
         accuracy={accuracy}
         zoneCenter={roomState.settings.zoneCenter}
         zoneRadiusMeters={roomState.settings.zoneRadiusMeters}
@@ -128,7 +143,7 @@ export const App: React.FC = () => {
         isRunner={isRunner}
         lastPings={roomState.lastPings}
         events={roomState.events}
-        onManualPositionChange={(lat, lng) => updatePosition(lat, lng, 5)}
+        onManualPositionChange={handleManualPositionChange}
       />
 
       {/* Superposition du HUD adapté selon le rôle */}

@@ -103,11 +103,23 @@ export class GameRoom {
     const defaultRole: PlayerRole =
       this.players.size === 0 ? 'runner' : 'hunter';
 
+    // Position initiale garantie (autour du centre de la zone pour être immédiatement visible par tous)
+    const angle = Math.random() * 2 * Math.PI;
+    const distanceMeters = 25 + Math.random() * 50;
+    const initialPosition: GeoPoint = {
+      lat: this.settings.zoneCenter.lat + (distanceMeters * Math.cos(angle)) / 111111,
+      lng:
+        this.settings.zoneCenter.lng +
+        (distanceMeters * Math.sin(angle)) /
+          (111111 * Math.cos((this.settings.zoneCenter.lat * Math.PI) / 180)),
+    };
+
     const player: Player = {
       id,
       name,
       role: defaultRole,
       isHost,
+      position: initialPosition,
       lastSeen: this.now(),
       secretCode: defaultRole === 'runner' ? this.generateSecretCode() : undefined,
     };
@@ -351,11 +363,19 @@ export class GameRoom {
 
     const isRunner = requestingPlayer?.role === 'runner';
 
+    const isHunter = requestingPlayer?.role === 'hunter';
+
     const playerList = Array.from(this.players.values()).map((p) => {
+      // 1. Un joueur voit toujours sa propre position
+      // 2. Les chasseurs voient TOUS les autres chasseurs en temps réel
+      // 3. Les fuyards voient TOUS les autres fuyards en temps réel
+      // 4. Dans le lobby ou à la fin, tout le monde voit tout le monde
       const showDirectPosition =
-        (p.role === 'hunter' && requestingPlayer?.role === 'hunter') ||
-        (p.role === 'runner' && isRunner) ||
-        p.id === requestingPlayerId;
+        p.id === requestingPlayerId ||
+        (isHunter && p.role === 'hunter') ||
+        (isRunner && p.role === 'runner') ||
+        this.state === 'lobby' ||
+        this.state === 'game_over';
 
       return {
         id: p.id,
