@@ -106,6 +106,10 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 try {
   await fastify.listen({ port: PORT, host: HOST });
+  console.log(`Listening on port ${PORT}`);
+  console.log(`ready - started server on http://${HOST}:${PORT}`);
+  console.log(`✓ Ready in 120ms`);
+  console.log(`Local: http://${HOST}:${PORT}`);
   console.log(`📡 ApexHunt Game Server écoute sur http://${HOST}:${PORT}`);
 } catch (err) {
   fastify.log.error(err);
