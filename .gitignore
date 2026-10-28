@@ -1,6 +1,8 @@
 node_modules/
 dist/
 build/
+dist_ptero/
+deploy_ptero/
 .env
 .env.local
 .DS_Store

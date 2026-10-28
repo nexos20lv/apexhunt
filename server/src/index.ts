@@ -1,7 +1,14 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
+import fastifyStatic from '@fastify/static';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { RoomManager } from './game/RoomManager.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const fastify = Fastify({
   logger: {
@@ -15,6 +22,32 @@ await fastify.register(cors, {
 });
 
 await fastify.register(websocket);
+
+// Enregistrement des fichiers statiques du frontend Vite (pour déploiement Pterodactyl tout-en-un)
+const staticDirs = [
+  path.join(process.cwd(), 'public'),
+  path.join(process.cwd(), 'client', 'dist'),
+  path.join(__dirname, '..', '..', 'client', 'dist'),
+  path.join(__dirname, 'public'),
+];
+
+const clientDistPath = staticDirs.find((dir) => fs.existsSync(dir));
+
+if (clientDistPath) {
+  await fastify.register(fastifyStatic, {
+    root: clientDistPath,
+    prefix: '/',
+  });
+  console.log(`📦 Fichiers frontend statiques servis depuis : ${clientDistPath}`);
+
+  fastify.setNotFoundHandler((req, reply) => {
+    if (req.raw.url && req.raw.url.startsWith('/api')) {
+      reply.status(404).send({ error: 'Endpoint introuvable', code: 'NOT_FOUND' });
+    } else {
+      reply.sendFile('index.html');
+    }
+  });
+}
 
 const roomManager = new RoomManager();
 
@@ -68,7 +101,7 @@ fastify.register(async function (fastify) {
   });
 });
 
-const PORT = Number(process.env.PORT) || 4000;
+const PORT = Number(process.env.PORT) || Number(process.env.SERVER_PORT) || 4000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 try {
