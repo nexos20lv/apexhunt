@@ -121,6 +121,17 @@ export class RoomManager {
         break;
       }
 
+      case 'restart_game': {
+        const player = room.getPlayer(client.playerId);
+        if (!player?.isHost) {
+          this.sendError(socket, 'Seul l’hôte peut relancer la partie');
+          return;
+        }
+        room.restartGame();
+        this.broadcastRoomState(room);
+        break;
+      }
+
       case 'claim_capture': {
         const result = room.claimCapture(client.playerId, msg.code);
         this.send(socket, {

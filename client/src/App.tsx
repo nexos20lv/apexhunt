@@ -5,7 +5,8 @@ import { LobbyScreen } from './components/LobbyScreen';
 import { MapRadar } from './components/MapRadar';
 import { RunnerHUD } from './components/RunnerHUD';
 import { HunterHUD } from './components/HunterHUD';
-import { Trophy, AlertCircle, Play, RotateCcw } from 'lucide-react';
+import { PostGameRecap } from './components/PostGameRecap';
+import { AlertCircle, Play } from 'lucide-react';
 
 export const App: React.FC = () => {
   const {
@@ -19,6 +20,7 @@ export const App: React.FC = () => {
     setRole,
     updatePosition,
     startGame,
+    restartGame,
     claimCapture,
     usePerk,
     updateSettings,
@@ -135,6 +137,7 @@ export const App: React.FC = () => {
         currentUserId={playerId}
         isRunner={isRunner}
         lastPings={roomState.lastPings}
+        nextShrinkInSeconds={roomState.nextShrinkInSeconds}
       />
 
       {/* Superposition du HUD adapté selon le rôle */}
@@ -169,41 +172,17 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Fin de Partie (Game Over) */}
+      {/* Récapitulatif de Fin de Partie (Podiums & Replay 15s) */}
       {roomState.state === 'game_over' && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-6 text-center backdrop-blur-2xl animate-in fade-in duration-300">
-          <div className="p-4 rounded-3xl bg-amber-950/30 border border-amber-500/40 mb-4 shadow-[0_0_30px_rgba(245,158,11,0.3)]">
-            <Trophy className="w-16 h-16 text-amber-400 animate-bounce" />
-          </div>
-
-          <h1 className="text-2xl font-black font-orbitron tracking-wider text-slate-100 mb-2">
-            PARTIE TERMINÉE
-          </h1>
-
-          <div
-            className={`text-xl font-bold font-orbitron uppercase my-2 ${
-              roomState.winner === 'hunters' ? 'text-amber-400' : 'text-cyan-400'
-            }`}
-          >
-            {roomState.winner === 'hunters'
-              ? '🎯 Les Chasseurs ont Capturé le Fuyard !'
-              : '🏃💨 Le Fuyard a Échappé aux Chasseurs !'}
-          </div>
-
-          <p className="text-xs text-slate-400 max-w-xs my-4 leading-relaxed">
-            {roomState.winner === 'hunters'
-              ? 'Le code secret a été validé avec succès par l’équipe de traqueurs.'
-              : 'Le compte à rebours de survie est arrivé à son terme dans la zone de jeu.'}
-          </p>
-
-          <button
-            onClick={() => leaveRoom()}
-            className="mt-4 px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 rounded-xl font-bold font-orbitron text-xs uppercase tracking-wider flex items-center gap-2 active-press shadow-lg"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Retour au Menu Principal</span>
-          </button>
-        </div>
+        <PostGameRecap
+          stats={roomState.gameStats}
+          currentUserId={playerId}
+          isHost={!!currentPlayer?.isHost}
+          zoneCenter={roomState.settings.zoneCenter}
+          zoneRadiusMeters={roomState.settings.zoneRadiusMeters}
+          onRestartGame={restartGame}
+          onLeaveRoom={leaveRoom}
+        />
       )}
     </div>
   );

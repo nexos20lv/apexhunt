@@ -1,0 +1,18 @@
+{
+  "name": "ApexHunt - Manhunt IRL",
+  "short_name": "ApexHunt",
+  "description": "Jeu de Manhunt IRL en temps réel avec radar GPS OLED et traque tactique",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -32,6 +32,9 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('start_game'),
   }),
   z.object({
+    type: z.literal('restart_game'),
+  }),
+  z.object({
     type: z.literal('claim_capture'),
     code: z.string().length(4),
   }),
@@ -46,6 +49,10 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       headStartMinutes: z.number().min(0).max(30).optional(),
       pingIntervalSeconds: z.number().min(15).max(600).optional(),
       zoneRadiusMeters: z.number().min(50).max(50000).optional(),
+      shrinkEnabled: z.boolean().optional(),
+      shrinkIntervalMinutes: z.number().min(1).max(30).optional(),
+      shrinkStepMeters: z.number().min(10).max(1000).optional(),
+      minZoneRadiusMeters: z.number().min(20).max(5000).optional(),
       zoneCenter: z
         .object({
           lat: z.number().min(-90).max(90),

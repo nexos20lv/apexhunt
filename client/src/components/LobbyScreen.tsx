@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { RoomPublicState } from '../hooks/useGameSocket';
-import { Shield, Crosshair, Users, Play, Copy, Check, QrCode, MapPin, Sliders } from 'lucide-react';
+import { Shield, Crosshair, Users, Play, Copy, Check, QrCode, MapPin, Sliders, Smartphone, Flame } from 'lucide-react';
 import { ZonePickerModal } from './ZonePickerModal';
+import { PWAInstallModal } from './PWAInstallModal';
 
 interface LobbyScreenProps {
   roomState: RoomPublicState | null;
@@ -36,6 +37,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showZonePicker, setShowZonePicker] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Auto-remplissage via l'URL (ex: ?room=WOLF)
@@ -150,6 +152,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               />
             </div>
 
+            {/* Détection Rejoindre en 1 Clic si lien d'invitation avec prénom déjà enregistré */}
+            {roomInput && name.trim() && (
+              <div className="bg-amber-950/40 border border-amber-500/50 p-3 rounded-xl flex flex-col gap-2 animate-in fade-in">
+                <span className="text-[11px] text-amber-300 font-bold">
+                  🔗 Invitation détectée : Room <strong>{roomInput}</strong>
+                </span>
+                <button
+                  onClick={handleJoin}
+                  className="w-full bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold py-3 rounded-lg uppercase tracking-wider font-orbitron text-xs active-press shadow-lg shadow-amber-950/50 flex items-center justify-center gap-2"
+                >
+                  <Play className="w-4 h-4 fill-black" />
+                  <span>Rejoindre en 1 clic ({name})</span>
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2.5 pt-2">
               <button
                 onClick={handleJoin}
@@ -176,12 +194,27 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
           </div>
 
-          {/* GPS Info */}
-          <div className="flex items-center justify-center gap-2 text-[11px] text-slate-400">
-            <MapPin className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Autorisation GPS requise pour synchroniser le radar</span>
+          {/* Bouton Installation PWA & GPS Info */}
+          <div className="flex flex-col items-center gap-2 text-[11px] text-slate-400">
+            <button
+              onClick={() => setShowInstallModal(true)}
+              className="flex items-center gap-2 py-2 px-4 rounded-xl bg-slate-900 border border-slate-800 text-cyan-400 hover:text-cyan-300 active-press transition"
+            >
+              <Smartphone className="w-4 h-4" />
+              <span>Installer l'App (Plein Écran sans barres)</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 text-slate-500 text-[10px]">
+              <MapPin className="w-3 h-3 text-cyan-400" />
+              <span>Autorisation GPS requise pour synchroniser le radar</span>
+            </div>
           </div>
         </div>
+
+        <PWAInstallModal
+          isOpen={showInstallModal}
+          onClose={() => setShowInstallModal(false)}
+        />
       </div>
     );
   }
@@ -200,13 +233,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={handleCopyLink}
-          className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-xs active-press font-medium"
-        >
-          {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
-          <span>{copied ? 'Lien copié !' : 'Partager'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowInstallModal(true)}
+            className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-xs active-press font-medium text-slate-300 hover:text-cyan-400"
+            title="Installer l'application"
+          >
+            <Smartphone className="w-4 h-4 text-cyan-400" />
+            <span className="hidden sm:inline">Plein Écran</span>
+          </button>
+
+          <button
+            onClick={handleCopyLink}
+            className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 px-3 py-2 rounded-xl text-xs active-press font-medium"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
+            <span>{copied ? 'Lien copié !' : 'Partager'}</span>
+          </button>
+        </div>
       </div>
 
       {/* QR Code pour les amis */}
@@ -441,6 +485,49 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Mode Battle Royale (Zone Rétrécissante) */}
+              <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-300 font-bold flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-amber-400" />
+                    Zone Rétrécissante (Battle Royale) :
+                  </span>
+                  <button
+                    onClick={() =>
+                      onUpdateSettings({ shrinkEnabled: !roomState.settings.shrinkEnabled })
+                    }
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition active-press ${
+                      roomState.settings.shrinkEnabled
+                        ? 'bg-amber-500 text-black shadow-md'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {roomState.settings.shrinkEnabled ? 'Activé' : 'Désactivé'}
+                  </button>
+                </div>
+
+                {roomState.settings.shrinkEnabled && (
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
+                    <span>Intervalle de réduction :</span>
+                    <div className="flex gap-1">
+                      {[2, 3, 5].map((int) => (
+                        <button
+                          key={int}
+                          onClick={() => onUpdateSettings({ shrinkIntervalMinutes: int })}
+                          className={`px-2.5 py-0.5 rounded font-mono ${
+                            (roomState.settings.shrinkIntervalMinutes || 3) === int
+                              ? 'bg-amber-400 text-black font-bold'
+                              : 'bg-slate-800 text-slate-300'
+                          }`}
+                        >
+                          {int}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -461,6 +548,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           En attente que l'hôte lance la partie...
         </div>
       )}
+
       {/* Modal Sélecteur de Zone Carte */}
       {showZonePicker && (
         <ZonePickerModal
@@ -474,6 +562,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           }}
         />
       )}
+
+      <PWAInstallModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+      />
     </div>
   );
 };

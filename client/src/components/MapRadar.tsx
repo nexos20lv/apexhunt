@@ -10,6 +10,7 @@ import {
   VolumeX,
   Globe,
   AlertTriangle,
+  Flame,
 } from 'lucide-react';
 import { soundFX } from '../audio/soundfx';
 
@@ -22,6 +23,7 @@ interface MapRadarProps {
   currentUserId: string;
   isRunner: boolean;
   lastPings: SonarPingPublic[];
+  nextShrinkInSeconds?: number | null;
 }
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -85,6 +87,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   currentUserId,
   isRunner,
   lastPings,
+  nextShrinkInSeconds,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -497,6 +500,14 @@ export const MapRadar: React.FC<MapRadarProps> = ({
               </span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Alerte Rétrécissement de Zone (Battle Royale) */}
+      {nextShrinkInSeconds !== null && nextShrinkInSeconds !== undefined && nextShrinkInSeconds <= 60 && nextShrinkInSeconds > 0 && (
+        <div className="absolute top-28 inset-x-0 mx-auto w-fit z-20 flex items-center gap-2 bg-red-950/90 border border-red-500/80 text-red-200 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold shadow-2xl backdrop-blur-md animate-pulse">
+          <Flame className="w-4 h-4 text-red-400 animate-bounce" />
+          <span>RÉTRÉCISSEMENT ZONE : {nextShrinkInSeconds}s !</span>
         </div>
       )}
 

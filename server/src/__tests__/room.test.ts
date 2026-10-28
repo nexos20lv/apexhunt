@@ -161,4 +161,60 @@ describe('GameRoom State Machine & Infection / Multi-Runner Mode', () => {
     expect(runnerPerk.success).toBe(false);
     expect(runnerPerk.message).toContain('réservé aux fuyards');
   });
+
+  it('rétrécit la zone de jeu en mode Battle Royale (shrinkEnabled)', () => {
+    room.updateSettings({
+      shrinkEnabled: true,
+      shrinkIntervalMinutes: 2,
+      shrinkStepMeters: 100,
+      minZoneRadiusMeters: 200,
+      zoneRadiusMeters: 1000,
+    });
+
+    room.addPlayer('r1', 'Runner', true);
+    room.setPlayerRole('r1', 'runner');
+    room.startGame();
+
+    // Fin du head start
+    room.advanceTime(10000);
+    expect(room.settings.zoneRadiusMeters).toBe(1000);
+
+    // Avance de 2 minutes (120 000 ms)
+    room.advanceTime(125000);
+    expect(room.settings.zoneRadiusMeters).toBe(900);
+
+    // Avance de 2 autres minutes
+    room.advanceTime(125000);
+    expect(room.settings.zoneRadiusMeters).toBe(800);
+  });
+
+  it('calcule la distance cumulée, les breadcrumbs et génère les gameStats de fin de partie', () => {
+    room.addPlayer('r1', 'Runner1', true);
+    room.addPlayer('h1', 'Hunter1', false);
+    room.setPlayerRole('r1', 'runner');
+    room.setPlayerRole('h1', 'hunter');
+
+    room.startGame();
+    room.advanceTime(10000); // Mode hunting
+
+    // Déplacement de Hunter1 (environ 50 mètres)
+    room.updatePlayerPosition('h1', 48.8584, 2.2945);
+    room.advanceTime(3000);
+    room.updatePlayerPosition('h1', 48.8588, 2.2945);
+
+    const hunter = room.getPlayer('h1');
+    expect(hunter?.distanceTraveledMeters).toBeGreaterThan(30);
+    expect(hunter?.breadcrumbs.length).toBeGreaterThanOrEqual(1);
+
+    // Capture et fin de partie
+    const r1Code = room.getPlayer('r1')!.secretCode!;
+    room.claimCapture('h1', r1Code);
+
+    expect(room.state).toBe('game_over');
+    const publicState = room.getPublicState('h1') as any;
+    expect(publicState.gameStats).toBeDefined();
+    expect(publicState.gameStats.mvpHunter?.id).toBe('h1');
+    expect(publicState.gameStats.topMarathonian?.id).toBe('h1');
+    expect(publicState.gameStats.playersStats).toHaveLength(2);
+  });
 });

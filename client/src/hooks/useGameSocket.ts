@@ -31,6 +31,33 @@ export interface PlayerPerks {
   triangulation: boolean;
 }
 
+export interface BreadcrumbPointPublic {
+  lat: number;
+  lng: number;
+  t: number;
+  role: 'runner' | 'hunter' | 'spectator';
+}
+
+export interface PlayerStatsPublic {
+  id: string;
+  name: string;
+  initialRole: 'runner' | 'hunter' | 'spectator';
+  finalRole: 'runner' | 'hunter' | 'spectator';
+  distanceMeters: number;
+  survivalSeconds: number;
+  capturesCount: number;
+  breadcrumbs: BreadcrumbPointPublic[];
+}
+
+export interface PostGameStatsPublic {
+  winner: 'runner' | 'hunters';
+  durationSeconds: number;
+  mvpRunner?: { id: string; name: string; survivalSeconds: number };
+  mvpHunter?: { id: string; name: string; capturesCount: number };
+  topMarathonian?: { id: string; name: string; distanceMeters: number };
+  playersStats: PlayerStatsPublic[];
+}
+
 export interface RoomPublicState {
   code: string;
   state: 'lobby' | 'head_start' | 'hunting' | 'game_over';
@@ -41,6 +68,10 @@ export interface RoomPublicState {
     pingIntervalSeconds: number;
     zoneCenter: { lat: number; lng: number };
     zoneRadiusMeters: number;
+    shrinkEnabled?: boolean;
+    shrinkIntervalMinutes?: number;
+    shrinkStepMeters?: number;
+    minZoneRadiusMeters?: number;
   };
   players: PlayerPublic[];
   activeRunnersCount: number;
@@ -48,10 +79,12 @@ export interface RoomPublicState {
   remainingTimeSeconds: number;
   headStartRemainingSeconds: number;
   nextPingInSeconds: number;
+  nextShrinkInSeconds?: number | null;
   lastPings: SonarPingPublic[];
   events?: TacticalEventPublic[];
   secretCode?: string;
   myPerks?: PlayerPerks;
+  gameStats?: PostGameStatsPublic;
 }
 
 export function useGameSocket() {
@@ -255,6 +288,10 @@ export function useGameSocket() {
     sendMessage({ type: 'start_game' });
   }, [sendMessage]);
 
+  const restartGame = useCallback(() => {
+    sendMessage({ type: 'restart_game' });
+  }, [sendMessage]);
+
   const claimCapture = useCallback(
     (code: string) => {
       sendMessage({ type: 'claim_capture', code });
@@ -287,6 +324,7 @@ export function useGameSocket() {
     setRole,
     updatePosition,
     startGame,
+    restartGame,
     claimCapture,
     usePerk,
     updateSettings,

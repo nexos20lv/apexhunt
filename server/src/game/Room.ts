@@ -1,4 +1,4 @@
-import { GeoPoint, applySonarUncertainty, isInsideZone, SonarPing } from './geo.js';
+import { GeoPoint, applySonarUncertainty, isInsideZone, calculateDistance, SonarPing } from './geo.js';
 import { PlayerRole, GameState } from '../schemas/ws.js';
 
 export interface PlayerPerks {
@@ -8,10 +8,18 @@ export interface PlayerPerks {
   triangulation: boolean; // 1 use max (hunter)
 }
 
+export interface BreadcrumbPoint {
+  lat: number;
+  lng: number;
+  t: number; // ms écoulées depuis startTime
+  role: PlayerRole;
+}
+
 export interface Player {
   id: string;
   name: string;
   role: PlayerRole;
+  initialRole: PlayerRole;
   isHost: boolean;
   position?: GeoPoint;
   accuracy?: number;
@@ -19,6 +27,10 @@ export interface Player {
   isOutSideZone?: boolean;
   secretCode?: string;
   perks: PlayerPerks;
+  distanceTraveledMeters: number;
+  survivalSeconds: number;
+  capturesCount: number;
+  breadcrumbs: BreadcrumbPoint[];
 }
 
 export interface RoomSettings {
@@ -27,6 +39,10 @@ export interface RoomSettings {
   pingIntervalSeconds: number;
   zoneCenter: GeoPoint;
   zoneRadiusMeters: number;
+  shrinkEnabled: boolean;
+  shrinkIntervalMinutes: number;
+  shrinkStepMeters: number;
+  minZoneRadiusMeters: number;
 }
 
 export interface PingResult {
@@ -54,6 +70,7 @@ export class GameRoom {
   private headStartEndTime: number = 0;
   private gameEndTime: number = 0;
   private lastPingTime: number = 0;
+  private lastShrinkTime: number = 0;
   private lastPingsResult: SonarPing[] = [];
   private simulatedTimeOffset: number = 0;
 
@@ -71,6 +88,10 @@ export class GameRoom {
       pingIntervalSeconds: settings?.pingIntervalSeconds ?? 90,
       zoneCenter: settings?.zoneCenter ?? { lat: 48.8584, lng: 2.2945 },
       zoneRadiusMeters: settings?.zoneRadiusMeters ?? 1000,
+      shrinkEnabled: settings?.shrinkEnabled ?? false,
+      shrinkIntervalMinutes: settings?.shrinkIntervalMinutes ?? 3,
+      shrinkStepMeters: settings?.shrinkStepMeters ?? 100,
+      minZoneRadiusMeters: settings?.minZoneRadiusMeters ?? 100,
     };
   }
 
@@ -126,6 +147,7 @@ export class GameRoom {
       id,
       name,
       role: defaultRole,
+      initialRole: defaultRole,
       isHost,
       position: initialPosition,
       lastSeen: this.now(),
@@ -136,6 +158,10 @@ export class GameRoom {
         sonarFlash: true,
         triangulation: true,
       },
+      distanceTraveledMeters: 0,
+      survivalSeconds: 0,
+      capturesCount: 0,
+      breadcrumbs: [],
     };
 
     this.players.set(id, player);
@@ -158,6 +184,7 @@ export class GameRoom {
     const player = this.players.get(id);
     if (player) {
       player.role = role;
+      player.initialRole = role;
       if (role === 'runner' && !player.secretCode) {
         player.secretCode = this.generateSecretCode();
       } else if (role !== 'runner') {
@@ -169,6 +196,25 @@ export class GameRoom {
   public updatePlayerPosition(id: string, lat: number, lng: number, accuracy?: number) {
     const player = this.players.get(id);
     if (player) {
+      // Calcul de la distance parcourue et échantillonnage des coordonnées pour le replay
+      if (player.position && (this.state === 'hunting' || this.state === 'head_start')) {
+        const d = calculateDistance(player.position.lat, player.position.lng, lat, lng);
+        // Filtrage des micro-oscillations (<2m) et des sauts aberrants (>300m)
+        if (d >= 2 && d < 300) {
+          player.distanceTraveledMeters += Math.round(d);
+          const t = Math.max(0, this.now() - this.startTime);
+          const lastBc = player.breadcrumbs[player.breadcrumbs.length - 1];
+          if (!lastBc || t - lastBc.t >= 2500 || d >= 10) {
+            player.breadcrumbs.push({ lat, lng, t, role: player.role });
+            if (player.breadcrumbs.length > 500) {
+              player.breadcrumbs = player.breadcrumbs.filter(
+                (_, idx) => idx % 2 === 0 || idx === player.breadcrumbs.length - 1
+              );
+            }
+          }
+        }
+      }
+
       player.position = { lat, lng };
       player.accuracy = accuracy;
       player.lastSeen = this.now();
@@ -218,6 +264,14 @@ export class GameRoom {
     if (this.state !== 'lobby') return;
 
     for (const player of this.players.values()) {
+      player.initialRole = player.role;
+      player.distanceTraveledMeters = 0;
+      player.survivalSeconds = 0;
+      player.capturesCount = 0;
+      player.breadcrumbs = player.position
+        ? [{ lat: player.position.lat, lng: player.position.lng, t: 0, role: player.role }]
+        : [];
+
       if (player.role === 'runner' && !player.secretCode) {
         player.secretCode = this.generateSecretCode();
       }
@@ -237,6 +291,7 @@ export class GameRoom {
     this.headStartEndTime = this.startTime + headStartMs;
     this.gameEndTime = this.startTime + durationMs;
     this.lastPingTime = this.headStartEndTime;
+    this.lastShrinkTime = this.headStartEndTime;
 
     if (headStartMs > 0) {
       this.state = 'head_start';
@@ -325,11 +380,22 @@ export class GameRoom {
     }
 
     // Infection
+    hunter.capturesCount += 1;
+    capturedRunner.survivalSeconds = Math.max(0, Math.round((this.now() - this.headStartEndTime) / 1000));
     capturedRunner.role = 'hunter';
     capturedRunner.secretCode = undefined;
     // Le nouveau chasseur hérite de ses bonus chasseur
     capturedRunner.perks.sonarFlash = true;
     capturedRunner.perks.triangulation = true;
+
+    if (capturedRunner.position) {
+      capturedRunner.breadcrumbs.push({
+        lat: capturedRunner.position.lat,
+        lng: capturedRunner.position.lng,
+        t: Math.max(0, this.now() - this.startTime),
+        role: 'hunter',
+      });
+    }
 
     const remainingRunners = this.getPlayers().filter((p) => p.role === 'runner');
 
@@ -447,7 +513,35 @@ export class GameRoom {
     if (this.state === 'head_start' && currentTime >= this.headStartEndTime) {
       this.state = 'hunting';
       stateChanged = true;
+      this.lastShrinkTime = currentTime;
       this.addEvent('Fin de l’avance ! Les radars s’activent maintenant !', 'start');
+    }
+
+    if (this.state === 'hunting') {
+      // Met à jour la survie des fuyards encore vivants
+      const matchElapsed = Math.max(0, Math.round((currentTime - this.headStartEndTime) / 1000));
+      for (const p of this.players.values()) {
+        if (p.role === 'runner') {
+          p.survivalSeconds = matchElapsed;
+        }
+      }
+
+      // Zone Rétrécissante (Mode Battle Royale)
+      if (this.settings.shrinkEnabled) {
+        const shrinkIntervalMs = this.settings.shrinkIntervalMinutes * 60 * 1000;
+        if (currentTime - this.lastShrinkTime >= shrinkIntervalMs) {
+          const newRadius = Math.max(
+            this.settings.minZoneRadiusMeters,
+            this.settings.zoneRadiusMeters - this.settings.shrinkStepMeters
+          );
+          if (newRadius < this.settings.zoneRadiusMeters) {
+            this.settings.zoneRadiusMeters = newRadius;
+            this.lastShrinkTime = currentTime;
+            stateChanged = true;
+            this.addEvent(`⚠️ La zone se rétrécit ! Nouveau rayon : ${newRadius}m`, 'zone');
+          }
+        }
+      }
     }
 
     if (this.state === 'hunting' && currentTime >= this.gameEndTime) {
@@ -467,6 +561,32 @@ export class GameRoom {
     }
 
     return { shouldPing: false, stateChanged };
+  }
+
+  public restartGame() {
+    this.state = 'lobby';
+    this.winner = null;
+    this.events = [];
+    this.lastPingsResult = [];
+    this.startTime = 0;
+    this.headStartEndTime = 0;
+    this.gameEndTime = 0;
+    this.lastShrinkTime = 0;
+    for (const player of this.players.values()) {
+      player.distanceTraveledMeters = 0;
+      player.survivalSeconds = 0;
+      player.capturesCount = 0;
+      player.breadcrumbs = [];
+      player.isOutSideZone = false;
+      player.secretCode = player.role === 'runner' ? this.generateSecretCode() : undefined;
+      player.perks = {
+        ghost: true,
+        decoy: true,
+        sonarFlash: true,
+        triangulation: true,
+      };
+    }
+    this.addEvent('Nouvelle partie prête dans le lobby !', 'start');
   }
 
   public getPublicState(requestingPlayerId?: string) {
@@ -523,6 +643,77 @@ export class GameRoom {
         ? headStartRemainingSeconds
         : 0;
 
+    const nextShrinkInSeconds =
+      this.settings.shrinkEnabled && this.state === 'hunting'
+        ? Math.max(
+            0,
+            Math.round(
+              (this.settings.shrinkIntervalMinutes * 60 * 1000 -
+                (currentTime - this.lastShrinkTime)) /
+                1000
+            )
+          )
+        : null;
+
+    let gameStats = undefined;
+    if (this.state === 'game_over') {
+      const allPlayers = Array.from(this.players.values());
+      const runners = allPlayers.filter((p) => p.initialRole === 'runner');
+      const hunters = allPlayers.filter((p) => p.initialRole === 'hunter');
+
+      let mvpRunner = undefined;
+      if (runners.length > 0) {
+        const sortedRunners = [...runners].sort((a, b) => b.survivalSeconds - a.survivalSeconds);
+        mvpRunner = {
+          id: sortedRunners[0].id,
+          name: sortedRunners[0].name,
+          survivalSeconds: sortedRunners[0].survivalSeconds,
+        };
+      }
+
+      let mvpHunter = undefined;
+      if (hunters.length > 0) {
+        const sortedHunters = [...hunters].sort((a, b) => b.capturesCount - a.capturesCount);
+        mvpHunter = {
+          id: sortedHunters[0].id,
+          name: sortedHunters[0].name,
+          capturesCount: sortedHunters[0].capturesCount,
+        };
+      }
+
+      const sortedByDist = [...allPlayers].sort(
+        (a, b) => b.distanceTraveledMeters - a.distanceTraveledMeters
+      );
+      const topMarathonian =
+        sortedByDist.length > 0
+          ? {
+              id: sortedByDist[0].id,
+              name: sortedByDist[0].name,
+              distanceMeters: sortedByDist[0].distanceTraveledMeters,
+            }
+          : undefined;
+
+      const durationSeconds = Math.max(0, Math.round((this.now() - this.startTime) / 1000));
+
+      gameStats = {
+        winner: this.winner,
+        durationSeconds,
+        mvpRunner,
+        mvpHunter,
+        topMarathonian,
+        playersStats: allPlayers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          initialRole: p.initialRole || p.role,
+          finalRole: p.role,
+          distanceMeters: p.distanceTraveledMeters,
+          survivalSeconds: p.survivalSeconds,
+          capturesCount: p.capturesCount,
+          breadcrumbs: p.breadcrumbs,
+        })),
+      };
+    }
+
     return {
       code: this.code,
       state: this.state,
@@ -534,10 +725,12 @@ export class GameRoom {
       remainingTimeSeconds,
       headStartRemainingSeconds,
       nextPingInSeconds,
+      nextShrinkInSeconds,
       lastPings: this.lastPingsResult,
       events: this.events.slice(-10),
       myPerks: requestingPlayer?.perks,
       secretCode: isRunner ? requestingPlayer?.secretCode : undefined,
+      gameStats,
     };
   }
 }
