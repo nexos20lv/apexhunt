@@ -1,0 +1,81 @@
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import websocket from '@fastify/websocket';
+import { RoomManager } from './game/RoomManager.js';
+
+const fastify = Fastify({
+  logger: {
+    level: process.env.LOG_LEVEL || 'info',
+  },
+});
+
+await fastify.register(cors, {
+  origin: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+});
+
+await fastify.register(websocket);
+
+const roomManager = new RoomManager();
+
+// Health Check
+fastify.get('/health', async () => {
+  return { status: 'ok', timestamp: Date.now() };
+});
+
+// Créer une nouvelle room
+fastify.post('/api/rooms', async (req, reply) => {
+  const room = roomManager.createRoom();
+  return reply.status(201).send({
+    code: room.code,
+    secretCode: room.secretCode,
+    settings: room.settings,
+  });
+});
+
+// Vérifier l'existence d'une room
+fastify.get<{ Params: { code: string } }>('/api/rooms/:code', async (req, reply) => {
+  const room = roomManager.getRoom(req.params.code);
+  if (!room) {
+    return reply.status(404).send({ error: 'Partie non trouvée', code: 'ROOM_NOT_FOUND' });
+  }
+  return {
+    code: room.code,
+    state: room.state,
+    playersCount: room.getPlayers().length,
+  };
+});
+
+// Passerelle WebSocket temps réel
+fastify.register(async function (fastify) {
+  fastify.get('/ws', { websocket: true }, (socket, req) => {
+    // Génère un ID de joueur éphémère ou utilise celui passé en paramètre d'URL
+    const url = new URL(req.url, 'http://localhost');
+    const playerId = url.searchParams.get('playerId') || `p_${Math.random().toString(36).substring(2, 9)}`;
+
+    roomManager.registerClient(socket, playerId);
+
+    socket.on('message', (message) => {
+      roomManager.handleMessage(socket, message);
+    });
+
+    socket.on('close', () => {
+      roomManager.unregisterClient(socket);
+    });
+
+    socket.on('error', (err) => {
+      fastify.log.error(err, 'Erreur WebSocket');
+    });
+  });
+});
+
+const PORT = Number(process.env.PORT) || 4000;
+const HOST = process.env.HOST || '0.0.0.0';
+
+try {
+  await fastify.listen({ port: PORT, host: HOST });
+  console.log(`📡 ApexHunt Game Server écoute sur http://${HOST}:${PORT}`);
+} catch (err) {
+  fastify.log.error(err);
+  process.exit(1);
+}
