@@ -349,6 +349,25 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
 
               <div className="flex items-center justify-between">
+                <span className="text-slate-400">Avance Fuyard :</span>
+                <div className="flex gap-1">
+                  {[0, 1, 2, 5].map((hs) => (
+                    <button
+                      key={hs}
+                      onClick={() => onUpdateSettings({ headStartMinutes: hs })}
+                      className={`px-2.5 py-1 rounded text-xs font-mono ${
+                        roomState.settings.headStartMinutes === hs
+                          ? 'bg-cyan-500 text-black font-bold'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {hs === 0 ? '0m (Direct)' : `${hs}m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
                 <span className="text-slate-400">Rayon Zone :</span>
                 <div className="flex gap-1">
                   {[500, 1000, 1500, 2000].map((r) => (

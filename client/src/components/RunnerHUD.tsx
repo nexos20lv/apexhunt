@@ -42,7 +42,9 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
           <div className="flex items-center gap-1.5 text-slate-200">
             <Clock className="w-4 h-4 text-cyan-400" />
             <span className="font-mono text-sm font-bold">
-              {formatTime(roomState.remainingTimeSeconds)}
+              {roomState.state === 'head_start'
+                ? `Avance : ${formatTime(roomState.headStartRemainingSeconds)}`
+                : formatTime(roomState.remainingTimeSeconds)}
             </span>
           </div>
         </div>
@@ -74,14 +76,26 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
           </p>
         </div>
 
-        {/* Compte à rebours du prochain Ping Sonar */}
+        {/* Compte à rebours du prochain Ping Sonar / Avance */}
         <div className="mt-4 bg-black/80 border border-slate-700/60 rounded-full px-4 py-1.5 flex items-center gap-2 backdrop-blur-md">
           <Radio className="w-4 h-4 text-amber-400 animate-pulse" />
           <span className="text-xs text-slate-300">
-            Prochain Ping Sonar :{' '}
-            <strong className="text-amber-400 font-bold">
-              {roomState.nextPingInSeconds}s
-            </strong>
+            {roomState.state === 'head_start' ? (
+              <>
+                Avance Fuyard :{' '}
+                <strong className="text-cyan-400 font-bold">
+                  {roomState.headStartRemainingSeconds}s
+                </strong>{' '}
+                <span className="text-[10px] text-slate-500">(Radar inactif)</span>
+              </>
+            ) : (
+              <>
+                Prochain Ping Sonar :{' '}
+                <strong className="text-amber-400 font-bold">
+                  {roomState.nextPingInSeconds}s
+                </strong>
+              </>
+            )}
           </span>
         </div>
       </div>

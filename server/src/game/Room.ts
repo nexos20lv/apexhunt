@@ -50,7 +50,7 @@ export class GameRoom {
 
     this.settings = {
       durationMinutes: settings?.durationMinutes ?? 30,
-      headStartMinutes: settings?.headStartMinutes ?? 5,
+      headStartMinutes: settings?.headStartMinutes ?? 0, // Par défaut 0 pour démarrage instantané
       pingIntervalSeconds: settings?.pingIntervalSeconds ?? 90,
       zoneCenter: settings?.zoneCenter ?? { lat: 48.8584, lng: 2.2945 },
       zoneRadiusMeters: settings?.zoneRadiusMeters ?? 1000,
@@ -357,6 +357,8 @@ export class GameRoom {
                 1000
             )
           )
+        : this.state === 'head_start'
+        ? headStartRemainingSeconds
         : 0;
 
     return {

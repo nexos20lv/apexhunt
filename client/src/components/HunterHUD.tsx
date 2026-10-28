@@ -65,7 +65,9 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           <div className="flex items-center gap-1.5 text-slate-200">
             <Clock className="w-4 h-4 text-amber-400" />
             <span className="font-mono text-sm font-bold">
-              {formatTime(roomState.remainingTimeSeconds)}
+              {roomState.state === 'head_start'
+                ? `Avance : ${formatTime(roomState.headStartRemainingSeconds)}`
+                : formatTime(roomState.remainingTimeSeconds)}
             </span>
           </div>
         </div>
@@ -89,9 +91,13 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           </div>
 
           <div className="text-right">
-            <div className="text-[10px] text-slate-400 uppercase">Prochain Ping</div>
+            <div className="text-[10px] text-slate-400 uppercase">
+              {roomState.state === 'head_start' ? 'Début de Traque' : 'Prochain Ping'}
+            </div>
             <div className="text-sm font-bold text-amber-400 font-orbitron">
-              {roomState.nextPingInSeconds}s
+              {roomState.state === 'head_start'
+                ? `${roomState.headStartRemainingSeconds}s`
+                : `${roomState.nextPingInSeconds}s`}
             </div>
           </div>
         </div>
