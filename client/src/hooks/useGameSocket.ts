@@ -46,16 +46,23 @@ export function useGameSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
+  // ID persistant dans localStorage pour conserver l'identité même en fermant / rouvrant l'onglet
   const getPlayerId = () => {
-    let id = sessionStorage.getItem('apexhunt_player_id');
+    let id = localStorage.getItem('apexhunt_player_id');
     if (!id) {
       id = `p_${Math.random().toString(36).substring(2, 9)}`;
-      sessionStorage.setItem('apexhunt_player_id', id);
+      localStorage.setItem('apexhunt_player_id', id);
     }
     return id;
   };
 
   const playerId = getPlayerId();
+
+  const sendMessage = useCallback((data: any) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(data));
+    }
+  }, []);
 
   const connect = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return;
@@ -72,13 +79,34 @@ export function useGameSocket() {
     ws.onopen = () => {
       setIsConnected(true);
       console.log('🔗 Connecté au serveur de jeu');
+
+      // Reconnexion automatique si une partie était en cours dans ce navigateur !
+      const savedRoom = localStorage.getItem('apexhunt_current_room');
+      const savedName = localStorage.getItem('apexhunt_user_name');
+      const savedIsHost = localStorage.getItem('apexhunt_is_host') === 'true';
+
+      if (savedRoom && savedName) {
+        console.log(`🔄 Reconnexion automatique à la room ${savedRoom}...`);
+        ws.send(
+          JSON.stringify({
+            type: 'join',
+            roomCode: savedRoom,
+            playerName: savedName,
+            isHost: savedIsHost,
+          })
+        );
+      }
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
 
-        if (msg.type === 'state_update' || msg.type === 'state_changed') {
+        if (
+          msg.type === 'state_update' ||
+          msg.type === 'state_changed' ||
+          msg.type === 'tick'
+        ) {
           setRoomState(msg.room);
         } else if (msg.type === 'sonar_ping') {
           setRoomState(msg.room);
@@ -112,7 +140,7 @@ export function useGameSocket() {
       setIsConnected(false);
       reconnectTimeoutRef.current = setTimeout(() => {
         connect();
-      }, 2000);
+      }, 1500);
     };
 
     ws.onerror = (err) => {
@@ -131,14 +159,34 @@ export function useGameSocket() {
     };
   }, [connect]);
 
-  const sendMessage = useCallback((data: any) => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify(data));
+  // Ticker fluide local chaque seconde pour décrémenter le temps en continu
+  useEffect(() => {
+    if (!roomState || (roomState.state !== 'hunting' && roomState.state !== 'head_start')) {
+      return;
     }
-  }, []);
+
+    const interval = setInterval(() => {
+      setRoomState((prev) => {
+        if (!prev) return null;
+
+        return {
+          ...prev,
+          remainingTimeSeconds: Math.max(0, prev.remainingTimeSeconds - 1),
+          headStartRemainingSeconds: Math.max(0, prev.headStartRemainingSeconds - 1),
+          nextPingInSeconds: Math.max(0, prev.nextPingInSeconds - 1),
+        };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [roomState?.state]);
 
   const joinRoom = useCallback(
     (roomCode: string, playerName: string, isHost = false) => {
+      localStorage.setItem('apexhunt_current_room', roomCode.toUpperCase());
+      localStorage.setItem('apexhunt_user_name', playerName);
+      localStorage.setItem('apexhunt_is_host', String(isHost));
+
       sendMessage({
         type: 'join',
         roomCode,
@@ -148,6 +196,12 @@ export function useGameSocket() {
     },
     [sendMessage]
   );
+
+  const leaveRoom = useCallback(() => {
+    localStorage.removeItem('apexhunt_current_room');
+    localStorage.removeItem('apexhunt_is_host');
+    setRoomState(null);
+  }, []);
 
   const setRole = useCallback(
     (role: 'runner' | 'hunter' | 'spectator') => {
@@ -200,6 +254,7 @@ export function useGameSocket() {
     feedback,
     clearFeedback: () => setFeedback(null),
     joinRoom,
+    leaveRoom,
     setRole,
     updatePosition,
     startGame,

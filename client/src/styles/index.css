@@ -39,6 +39,11 @@ h1, h2, h3, .font-orbitron {
   animation: radar-sweep 4s linear infinite;
 }
 
+/* Tactical Dark Radar Tiles (OpenStreetMap sans API key avec rendu OLED stealth) */
+.tactical-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(75%) contrast(110%) !important;
+}
+
 /* Leaflet dark theme adjustments */
 .leaflet-container {
   background: #000000 !important;

@@ -18,7 +18,7 @@ export class RoomManager {
   }
 
   private generateCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans I, O, 1, 0 pour éviter la confusion
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     do {
       code = '';
@@ -45,23 +45,8 @@ export class RoomManager {
   }
 
   public unregisterClient(socket: WebSocket) {
-    const client = this.clients.get(socket);
-    if (client && client.roomCode) {
-      const room = this.rooms.get(client.roomCode);
-      if (room) {
-        room.removePlayer(client.playerId);
-        this.broadcastRoomState(room);
-
-        // Si la room est vide, la nettoyer après 5 minutes
-        if (room.getPlayers().length === 0) {
-          setTimeout(() => {
-            if (room.getPlayers().length === 0) {
-              this.rooms.delete(room.code);
-            }
-          }, 5 * 60 * 1000);
-        }
-      }
-    }
+    // Ne supprime PAS le joueur de la room lors d'une simple déconnexion réseau / rechargement de page.
+    // Le joueur pourra se reconnecter avec son playerId et retrouver son rôle et son état instantanément.
     this.clients.delete(socket);
   }
 
@@ -88,7 +73,6 @@ export class RoomManager {
     if (msg.type === 'join') {
       let room = this.getRoom(msg.roomCode);
       if (!room) {
-        // Si l'hôte crée la room avec un code demandé ou si elle n'existe pas
         if (msg.isHost) {
           room = new GameRoom(msg.roomCode.toUpperCase());
           this.rooms.set(room.code, room);
@@ -104,7 +88,6 @@ export class RoomManager {
       return;
     }
 
-    // Pour toute autre action, le joueur doit être dans une room
     if (!client.roomCode) {
       this.sendError(socket, 'Veuillez d’abord rejoindre une partie');
       return;
@@ -216,6 +199,9 @@ export class RoomManager {
           this.broadcastRoomState(room, 'sonar_ping', pingResult);
         } else if (stateChanged) {
           this.broadcastRoomState(room, 'state_changed');
+        } else if (room.state === 'hunting' || room.state === 'head_start') {
+          // Synchronise le compte à rebours et l'état en direct chaque seconde
+          this.broadcastRoomState(room, 'tick');
         }
       }
     }, 1000);

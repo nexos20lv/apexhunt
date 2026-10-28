@@ -15,6 +15,7 @@ export const App: React.FC = () => {
     feedback,
     clearFeedback,
     joinRoom,
+    leaveRoom,
     setRole,
     updatePosition,
     startGame,
@@ -168,11 +169,11 @@ export const App: React.FC = () => {
           </p>
 
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => leaveRoom()}
             className="mt-4 px-6 py-3.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 rounded-xl font-bold font-orbitron text-xs uppercase tracking-wider flex items-center gap-2 active-press shadow-lg"
           >
             <RotateCcw className="w-4 h-4" />
-            <span>Rejouer une Partie</span>
+            <span>Retour au Menu Principal</span>
           </button>
         </div>
       )}

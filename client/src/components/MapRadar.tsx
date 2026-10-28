@@ -46,10 +46,11 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       attributionControl: false,
     });
 
-    // Tuiles CartoDB Dark Matter
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Tuiles OpenStreetMap haute performance avec filtre Dark OLED tactique (100% gratuit, 0 API key)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
+      className: 'tactical-dark-tiles',
+      attribution: '© OpenStreetMap',
     }).addTo(map);
 
     teammatesLayerRef.current = L.layerGroup().addTo(map);
