@@ -45,7 +45,13 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
       durationMinutes: z.number().min(5).max(180).optional(),
       headStartMinutes: z.number().min(0).max(30).optional(),
       pingIntervalSeconds: z.number().min(15).max(600).optional(),
-      zoneRadiusMeters: z.number().min(100).max(10000).optional(),
+      zoneRadiusMeters: z.number().min(50).max(50000).optional(),
+      zoneCenter: z
+        .object({
+          lat: z.number().min(-90).max(90),
+          lng: z.number().min(-180).max(180),
+        })
+        .optional(),
     }),
   }),
 ]);

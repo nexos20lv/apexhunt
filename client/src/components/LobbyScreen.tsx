@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { RoomPublicState } from '../hooks/useGameSocket';
 import { Shield, Crosshair, Users, Play, Copy, Check, QrCode, MapPin, Sliders } from 'lucide-react';
+import { ZonePickerModal } from './ZonePickerModal';
 
 interface LobbyScreenProps {
   roomState: RoomPublicState | null;
@@ -13,6 +14,7 @@ interface LobbyScreenProps {
   onRequestGPS: () => void;
   gpsActive: boolean;
   gpsError: string | null;
+  userPosition?: { lat: number; lng: number } | null;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -25,6 +27,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onRequestGPS,
   gpsActive,
   gpsError,
+  userPosition,
 }) => {
   const [name, setName] = useState(
     () => localStorage.getItem('apexhunt_user_name') || ''
@@ -32,6 +35,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [roomInput, setRoomInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showZonePicker, setShowZonePicker] = useState(false);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Auto-remplissage via l'URL (ex: ?room=WOLF)
@@ -311,6 +315,58 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </button>
       )}
 
+      {/* Configuration de la Zone de Jeu (Hôte & Joueurs) */}
+      <div className="mb-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-4 flex flex-col gap-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+            Zone de Traque
+          </span>
+          <span className="text-xs font-mono font-bold text-cyan-400">
+            Rayon : {roomState.settings.zoneRadiusMeters >= 1000 ? `${(roomState.settings.zoneRadiusMeters / 1000).toFixed(1)} km` : `${roomState.settings.zoneRadiusMeters} m`}
+          </span>
+        </div>
+
+        <div className="text-[11px] text-slate-300 font-mono bg-black/60 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+          <span>Centre : {roomState.settings.zoneCenter.lat.toFixed(4)}, {roomState.settings.zoneCenter.lng.toFixed(4)}</span>
+          {Math.abs(roomState.settings.zoneCenter.lat - 48.8584) < 0.005 && Math.abs(roomState.settings.zoneCenter.lng - 2.2945) < 0.005 && (
+            <span className="text-[9px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded border border-amber-500/40">Paris (Défaut)</span>
+          )}
+        </div>
+
+        {isHost ? (
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <button
+              onClick={() => {
+                if (userPosition) {
+                  onUpdateSettings({ zoneCenter: userPosition });
+                } else {
+                  onRequestGPS();
+                }
+              }}
+              className="py-2.5 px-3 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5 active-press transition"
+              title="Centrer la zone sur ma position GPS réelle"
+            >
+              <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Sur mon GPS</span>
+            </button>
+
+            <button
+              onClick={() => setShowZonePicker(true)}
+              className="py-2.5 px-3 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/40 text-cyan-300 text-xs font-bold flex items-center justify-center gap-1.5 active-press transition"
+              title="Ouvrir la carte pour choisir ou chercher une zone"
+            >
+              <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Sur la Carte</span>
+            </button>
+          </div>
+        ) : (
+          <span className="text-[10px] text-slate-500 italic">
+            L'hôte configure la zone avant le lancement.
+          </span>
+        )}
+      </div>
+
       {/* Paramètres de la partie (Hôte) */}
       {isHost && (
         <div className="mb-4">
@@ -404,6 +460,19 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <div className="text-center p-4 bg-black/60 border border-slate-800 rounded-2xl text-xs text-slate-400 font-medium">
           En attente que l'hôte lance la partie...
         </div>
+      )}
+      {/* Modal Sélecteur de Zone Carte */}
+      {showZonePicker && (
+        <ZonePickerModal
+          isOpen={showZonePicker}
+          onClose={() => setShowZonePicker(false)}
+          currentCenter={roomState.settings.zoneCenter}
+          currentRadius={roomState.settings.zoneRadiusMeters}
+          userGpsPosition={userPosition || null}
+          onSaveZone={(center, radius) => {
+            onUpdateSettings({ zoneCenter: center, zoneRadiusMeters: radius });
+          }}
+        />
       )}
     </div>
   );

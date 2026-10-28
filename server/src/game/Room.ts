@@ -190,7 +190,28 @@ export class GameRoom {
 
   public updateSettings(newSettings: Partial<RoomSettings>) {
     if (this.state !== 'lobby') return;
+    const oldCenter = this.settings.zoneCenter;
     this.settings = { ...this.settings, ...newSettings };
+
+    // Si le centre de la zone change, repositionne les joueurs du lobby autour du nouveau centre
+    if (
+      newSettings.zoneCenter &&
+      (Math.abs(newSettings.zoneCenter.lat - oldCenter.lat) > 0.0001 ||
+        Math.abs(newSettings.zoneCenter.lng - oldCenter.lng) > 0.0001)
+    ) {
+      for (const player of this.players.values()) {
+        const angle = Math.random() * 2 * Math.PI;
+        const distanceMeters = 20 + Math.random() * 40;
+        player.position = {
+          lat: this.settings.zoneCenter.lat + (distanceMeters * Math.cos(angle)) / 111111,
+          lng:
+            this.settings.zoneCenter.lng +
+            (distanceMeters * Math.sin(angle)) /
+              (111111 * Math.cos((this.settings.zoneCenter.lat * Math.PI) / 180)),
+        };
+        player.isOutSideZone = false;
+      }
+    }
   }
 
   public startGame() {

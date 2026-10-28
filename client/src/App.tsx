@@ -94,6 +94,7 @@ export const App: React.FC = () => {
         onRequestGPS={startTracking}
         gpsActive={gpsActive}
         gpsError={gpsError}
+        userPosition={effectivePosition}
       />
     );
   }
