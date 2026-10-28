@@ -17,6 +17,13 @@ export interface SonarPingPublic {
   timestamp: number;
 }
 
+export interface TacticalEventPublic {
+  id: string;
+  time: string;
+  message: string;
+  type: 'start' | 'ping' | 'perk' | 'infected' | 'zone';
+}
+
 export interface RoomPublicState {
   code: string;
   state: 'lobby' | 'head_start' | 'hunting' | 'game_over';
@@ -35,6 +42,7 @@ export interface RoomPublicState {
   headStartRemainingSeconds: number;
   nextPingInSeconds: number;
   lastPings: SonarPingPublic[];
+  events?: TacticalEventPublic[];
   secretCode?: string;
 }
 
@@ -46,7 +54,6 @@ export function useGameSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
-  // ID persistant dans localStorage pour conserver l'identité même en fermant / rouvrant l'onglet
   const getPlayerId = () => {
     let id = localStorage.getItem('apexhunt_player_id');
     if (!id) {
@@ -80,7 +87,6 @@ export function useGameSocket() {
       setIsConnected(true);
       console.log('🔗 Connecté au serveur de jeu');
 
-      // Reconnexion automatique si une partie était en cours dans ce navigateur !
       const savedRoom = localStorage.getItem('apexhunt_current_room');
       const savedName = localStorage.getItem('apexhunt_user_name');
       const savedIsHost = localStorage.getItem('apexhunt_is_host') === 'true';
@@ -169,11 +175,26 @@ export function useGameSocket() {
       setRoomState((prev) => {
         if (!prev) return null;
 
+        const newRemaining = Math.max(0, prev.remainingTimeSeconds - 1);
+        const newHeadStart = Math.max(0, prev.headStartRemainingSeconds - 1);
+        const newNextPing = Math.max(0, prev.nextPingInSeconds - 1);
+
+        // Bips sonores de tension quand le ping approche (3, 2, 1s)
+        if (prev.state === 'hunting' && newNextPing <= 3 && newNextPing >= 1) {
+          soundFX.playCountdownBeep(newNextPing);
+        }
+
+        let newState = prev.state;
+        if (prev.state === 'head_start' && newHeadStart <= 0) {
+          newState = 'hunting';
+        }
+
         return {
           ...prev,
-          remainingTimeSeconds: Math.max(0, prev.remainingTimeSeconds - 1),
-          headStartRemainingSeconds: Math.max(0, prev.headStartRemainingSeconds - 1),
-          nextPingInSeconds: Math.max(0, prev.nextPingInSeconds - 1),
+          state: newState,
+          remainingTimeSeconds: newRemaining,
+          headStartRemainingSeconds: newHeadStart,
+          nextPingInSeconds: newNextPing,
         };
       });
     }, 1000);

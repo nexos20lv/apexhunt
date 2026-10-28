@@ -10,7 +10,7 @@ export interface Player {
   accuracy?: number;
   lastSeen: number;
   isOutSideZone?: boolean;
-  secretCode?: string; // Code 4 chiffres attribué si le joueur est fuyard
+  secretCode?: string;
 }
 
 export interface RoomSettings {
@@ -27,11 +27,19 @@ export interface PingResult {
   nextPingInSeconds: number;
 }
 
+export interface TacticalEvent {
+  id: string;
+  time: string;
+  message: string;
+  type: 'start' | 'ping' | 'perk' | 'infected' | 'zone';
+}
+
 export class GameRoom {
   public readonly code: string;
   public state: GameState = 'lobby';
   public settings: RoomSettings;
   public winner: 'runner' | 'hunters' | null = null;
+  public events: TacticalEvent[] = [];
 
   private players = new Map<string, Player>();
   private startTime: number = 0;
@@ -50,7 +58,7 @@ export class GameRoom {
 
     this.settings = {
       durationMinutes: settings?.durationMinutes ?? 30,
-      headStartMinutes: settings?.headStartMinutes ?? 0, // Par défaut 0 pour démarrage instantané
+      headStartMinutes: settings?.headStartMinutes ?? 0,
       pingIntervalSeconds: settings?.pingIntervalSeconds ?? 90,
       zoneCenter: settings?.zoneCenter ?? { lat: 48.8584, lng: 2.2945 },
       zoneRadiusMeters: settings?.zoneRadiusMeters ?? 1000,
@@ -68,6 +76,20 @@ export class GameRoom {
   public advanceTime(ms: number) {
     this.simulatedTimeOffset += ms;
     this.tick();
+  }
+
+  private addEvent(message: string, type: TacticalEvent['type']) {
+    const d = new Date(this.now());
+    const time = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+    this.events.push({
+      id: `evt_${Math.random().toString(36).substring(2, 9)}`,
+      time,
+      message,
+      type,
+    });
+    if (this.events.length > 25) {
+      this.events.shift();
+    }
   }
 
   public addPlayer(id: string, name: string, isHost = false): Player {
@@ -126,11 +148,16 @@ export class GameRoom {
       player.lastSeen = this.now();
 
       if (this.state === 'hunting' || this.state === 'head_start') {
+        const wasOutside = player.isOutSideZone;
         player.isOutSideZone = !isInsideZone(
           player.position,
           this.settings.zoneCenter,
           this.settings.zoneRadiusMeters
         );
+
+        if (!wasOutside && player.isOutSideZone) {
+          this.addEvent(`⚠️ ${player.name} est sorti de la zone de jeu !`, 'zone');
+        }
       }
     }
   }
@@ -143,7 +170,6 @@ export class GameRoom {
   public startGame() {
     if (this.state !== 'lobby') return;
 
-    // Assure que chaque fuyard a son code unique
     for (const player of this.players.values()) {
       if (player.role === 'runner' && !player.secretCode) {
         player.secretCode = this.generateSecretCode();
@@ -160,8 +186,10 @@ export class GameRoom {
 
     if (headStartMs > 0) {
       this.state = 'head_start';
+      this.addEvent(`Avance de ${this.settings.headStartMinutes} min accordée aux fuyards !`, 'start');
     } else {
       this.state = 'hunting';
+      this.addEvent('La traque est lancée ! Que la chasse commence !', 'start');
     }
   }
 
@@ -175,13 +203,18 @@ export class GameRoom {
 
     if (this.ghostModeActive) {
       this.ghostModeActive = false;
+      this.addEvent('👻 Ghost Mode actif : Ping sonar masqué !', 'perk');
       return { isGhosted: true, pings: [], nextPingInSeconds: interval };
     }
 
     const pings: SonarPing[] = [];
     const uncertaintyMin = this.decoyActive ? 150 : 30;
     const uncertaintyMax = this.decoyActive ? 250 : 60;
-    this.decoyActive = false;
+
+    if (this.decoyActive) {
+      this.addEvent('📡 Faux Leurre activé par un fuyard !', 'perk');
+      this.decoyActive = false;
+    }
 
     for (const runner of activeRunners) {
       if (runner.position) {
@@ -196,6 +229,7 @@ export class GameRoom {
 
     this.lastPingsResult = pings;
     this.lastPingTime = this.now();
+    this.addEvent(`📡 Ping Sonar : ${pings.length} fuyard(s) détecté(s)`, 'ping');
 
     return {
       isGhosted: false,
@@ -204,10 +238,6 @@ export class GameRoom {
     };
   }
 
-  /**
-   * Validation de Capture avec Mode Contagion / Infection :
-   * Le fuyard capturé est converti en Chasseur et rejoint l'escouade de traque !
-   */
   public claimCapture(
     hunterId: string,
     enteredCode: string
@@ -230,7 +260,7 @@ export class GameRoom {
       return { success: false, message: 'Code incorrect ! Aucun fuyard ne correspond.', allCaptured: false };
     }
 
-    // Infection : Le fuyard capturé rejoint les chasseurs !
+    // Infection
     capturedRunner.role = 'hunter';
     capturedRunner.secretCode = undefined;
 
@@ -239,6 +269,7 @@ export class GameRoom {
     if (remainingRunners.length === 0) {
       this.state = 'game_over';
       this.winner = 'hunters';
+      this.addEvent(`🎯 ${hunter.name} a éliminé le dernier fuyard (${capturedRunner.name}) ! Victoire des Chasseurs !`, 'infected');
       return {
         success: true,
         message: `Dernier fuyard (${capturedRunner.name}) capturé ! Victoire totale des chasseurs !`,
@@ -246,6 +277,8 @@ export class GameRoom {
         infectedPlayerName: capturedRunner.name,
       };
     }
+
+    this.addEvent(`🧟 ${capturedRunner.name} a été infecté par ${hunter.name} et devient Chasseur !`, 'infected');
 
     return {
       success: true,
@@ -263,9 +296,11 @@ export class GameRoom {
 
     if (perk === 'ghost') {
       this.ghostModeActive = true;
+      this.addEvent(`${player.name} a activé Ghost Mode`, 'perk');
       return { success: true, message: 'Ghost Mode activé : le prochain ping sera brouillé !' };
     } else if (perk === 'decoy') {
       this.decoyActive = true;
+      this.addEvent(`${player.name} a déployé un Leurre GPS`, 'perk');
       return { success: true, message: 'Leurre déployé : le prochain ping émettra un faux signal !' };
     }
 
@@ -287,12 +322,14 @@ export class GameRoom {
     if (this.state === 'head_start' && currentTime >= this.headStartEndTime) {
       this.state = 'hunting';
       stateChanged = true;
+      this.addEvent('Fin de l’avance ! Les radars s’activent maintenant !', 'start');
     }
 
     if (this.state === 'hunting' && currentTime >= this.gameEndTime) {
       this.state = 'game_over';
       this.winner = 'runner';
       stateChanged = true;
+      this.addEvent('Temps écoulé ! Les fuyards survivants remportent la traque !', 'start');
       return { shouldPing: false, stateChanged };
     }
 
@@ -315,9 +352,6 @@ export class GameRoom {
     const isRunner = requestingPlayer?.role === 'runner';
 
     const playerList = Array.from(this.players.values()).map((p) => {
-      // Les chasseurs voient tous les chasseurs.
-      // Les fuyards se voient mutuellement pour s'entraider !
-      // Mais un chasseur ne voit JAMAIS la position directe d'un fuyard.
       const showDirectPosition =
         (p.role === 'hunter' && requestingPlayer?.role === 'hunter') ||
         (p.role === 'runner' && isRunner) ||
@@ -373,7 +407,7 @@ export class GameRoom {
       headStartRemainingSeconds,
       nextPingInSeconds,
       lastPings: this.lastPingsResult,
-      // Seul le joueur fuyard voit son propre code secret à 4 chiffres
+      events: this.events.slice(-10),
       secretCode: isRunner ? requestingPlayer?.secretCode : undefined,
     };
   }

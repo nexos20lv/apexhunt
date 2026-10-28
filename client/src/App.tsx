@@ -127,6 +127,8 @@ export const App: React.FC = () => {
         currentUserId={playerId}
         isRunner={isRunner}
         lastPings={roomState.lastPings}
+        events={roomState.events}
+        onManualPositionChange={(lat, lng) => updatePosition(lat, lng, 5)}
       />
 
       {/* Superposition du HUD adapté selon le rôle */}
