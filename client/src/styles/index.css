@@ -50,6 +50,17 @@ h1, h2, h3, .font-orbitron {
   font-family: 'JetBrains Mono', monospace !important;
 }
 
+/* Enlève la boîte blanche par défaut de Leaflet sur les divIcon personnalisés */
+.leaflet-div-icon,
+.custom-user-marker,
+.custom-teammate-marker,
+.zone-center-marker,
+.user-gps-marker,
+.boundary-tag-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
 .leaflet-control-zoom {
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   background: rgba(0, 0, 0, 0.75) !important;

@@ -62,6 +62,13 @@ export const App: React.FC = () => {
     updatePosition(lat, lng, 5);
   };
 
+  // Synchronise en continu la position avec le serveur dès qu'on rejoint la room (même avant fix GPS)
+  useEffect(() => {
+    if (effectivePosition && isConnected && roomState) {
+      updatePosition(effectivePosition.lat, effectivePosition.lng, accuracy ?? 5);
+    }
+  }, [effectivePosition?.lat, effectivePosition?.lng, isConnected, roomState?.code, updatePosition]);
+
   // Centre automatiquement la zone de jeu sur la position GPS réelle de l'hôte
   useEffect(() => {
     if (effectivePosition && currentPlayer?.isHost && roomState?.state === 'lobby') {

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { PlayerPublic, SonarPingPublic } from '../hooks/useGameSocket';
 import {
   Crosshair,
@@ -12,6 +13,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
+  Globe,
+  AlertTriangle,
 } from 'lucide-react';
 import { soundFX } from '../audio/soundfx';
 
@@ -45,12 +48,38 @@ function calculateBearingDegrees(lat1: number, lon1: number, lat2: number, lon2:
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const y = Math.sin(dLon) * Math.cos((lat2 * Math.PI) / 180);
   const x =
-    Math.cos((lat1 * Math.PI) * (180 / Math.PI)) * Math.sin((lat2 * Math.PI) / 180) -
-    Math.sin((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.cos(dLon);
-  const deg = (Math.atan2(y, x) * 180) / Math.PI;
-  return (deg + 360) % 360;
+    Math.cos((lat1 * Math.PI) / 180) * Math.sin((lat2 * Math.PI) / 180) -
+    Math.sin((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.cos(dLon);
+  const brng = (Math.atan2(y, x) * 180) / Math.PI;
+  return (brng + 360) % 360;
+}
+
+// Génère un polygone "masque inversé" : remplit le monde entier sauf l'intérieur du cercle de jeu
+function createInvertedCirclePolygon(
+  center: { lat: number; lng: number },
+  radiusMeters: number
+): [number, number][][] {
+  const outerWorld: [number, number][] = [
+    [-85, -180],
+    [-85, 180],
+    [85, 180],
+    [85, -180],
+    [-85, -180],
+  ];
+
+  const innerHole: [number, number][] = [];
+  const points = 64;
+  for (let i = 0; i <= points; i++) {
+    const angle = (i * 2 * Math.PI) / points;
+    const lat = center.lat + (radiusMeters * Math.cos(angle)) / 111111;
+    const lng =
+      center.lng +
+      (radiusMeters * Math.sin(angle)) /
+        (111111 * Math.cos((center.lat * Math.PI) / 180));
+    innerHole.push([lat, lng]);
+  }
+
+  return [outerWorld, innerHole];
 }
 
 export const MapRadar: React.FC<MapRadarProps> = ({
@@ -67,25 +96,38 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const hasAutoCenteredRef = useRef(false);
+  const hasCenteredOnGpsRef = useRef(false);
 
   const [isMuted, setIsMuted] = useState(soundFX.isMuted);
   const [simMode, setSimMode] = useState(false);
 
   // Layers refs
-  const zoneCircleRef = useRef<L.Circle | null>(null);
+  const zoneBoundaryLayerRef = useRef<L.LayerGroup | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const userAccCircleRef = useRef<L.Circle | null>(null);
   const teammatesLayerRef = useRef<L.LayerGroup | null>(null);
   const pingsLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // Calcul du détecteur de proximité et compas
+  // Distance et relèvement vers la cible / chasseur
   let targetDistance: number | null = null;
   let targetBearing: number = 0;
   let targetLabel = '';
 
+  // Distance jusqu'à la limite de zone
+  let distToBoundary: number | null = null;
+  let isOutsideLimit = false;
+
   if (userPosition) {
+    const distFromCenter = calculateDistanceMeters(
+      userPosition.lat,
+      userPosition.lng,
+      zoneCenter.lat,
+      zoneCenter.lng
+    );
+    distToBoundary = Math.round(zoneRadiusMeters - distFromCenter);
+    isOutsideLimit = distToBoundary < 0;
+
     if (!isRunner && lastPings.length > 0) {
-      // Pour les chasseurs : distance vers le ping de fuyard le plus proche
       let minD = Infinity;
       let closestPing: SonarPingPublic | null = null;
       for (const p of lastPings) {
@@ -97,15 +139,24 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       }
       if (closestPing) {
         targetDistance = minD;
-        targetBearing = calculateBearingDegrees(userPosition.lat, userPosition.lng, closestPing.lat, closestPing.lng);
+        targetBearing = calculateBearingDegrees(
+          userPosition.lat,
+          userPosition.lng,
+          closestPing.lat,
+          closestPing.lng
+        );
         targetLabel = 'Dernier Signal';
       }
     } else if (isRunner) {
-      // Pour les fuyards : alerte de proximité si un chasseur approche !
       let minD = Infinity;
       for (const p of players) {
         if (p.role === 'hunter' && p.position) {
-          const d = calculateDistanceMeters(userPosition.lat, userPosition.lng, p.position.lat, p.position.lng);
+          const d = calculateDistanceMeters(
+            userPosition.lat,
+            userPosition.lng,
+            p.position.lat,
+            p.position.lng
+          );
           if (d < minD) {
             minD = d;
           }
@@ -134,13 +185,13 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       maxZoom: 19,
       subdomains: ['a', 'b', 'c'],
       className: 'tactical-dark-tiles',
-      attribution: '© OpenStreetMap contributors',
     }).addTo(map);
 
+    zoneBoundaryLayerRef.current = L.layerGroup().addTo(map);
     teammatesLayerRef.current = L.layerGroup().addTo(map);
     pingsLayerRef.current = L.layerGroup().addTo(map);
 
-    // Clic sur la carte en mode simulation
+    // Clic tactile ou souris sur la carte pour déplacer son avatar
     map.on('click', (e: L.LeafletMouseEvent) => {
       if (onManualPositionChange) {
         onManualPositionChange(e.latlng.lat, e.latlng.lng);
@@ -155,69 +206,143 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     };
   }, []);
 
-  // Zone de jeu circulaire
+  // Affichage Haute Visibilité des Limites de Zone
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !zoneBoundaryLayerRef.current) return;
+    zoneBoundaryLayerRef.current.clearLayers();
 
-    if (zoneCircleRef.current) {
-      zoneCircleRef.current.setLatLng([zoneCenter.lat, zoneCenter.lng]);
-      zoneCircleRef.current.setRadius(zoneRadiusMeters);
-    } else {
-      zoneCircleRef.current = L.circle([zoneCenter.lat, zoneCenter.lng], {
-        radius: zoneRadiusMeters,
-        color: '#ef4444',
-        weight: 2,
-        dashArray: '6, 6',
-        fillColor: '#ef4444',
-        fillOpacity: 0.04,
-      }).addTo(mapRef.current);
-    }
+    const layer = zoneBoundaryLayerRef.current;
+    const centerLatLng: [number, number] = [zoneCenter.lat, zoneCenter.lng];
+
+    // 1. Masque sombre extérieur ("Zone Interdite / Brouillard de guerre")
+    const invertedCoords = createInvertedCirclePolygon(zoneCenter, zoneRadiusMeters);
+    L.polygon(invertedCoords, {
+      fillColor: '#000000',
+      fillOpacity: 0.55,
+      stroke: false,
+      interactive: false,
+    }).addTo(layer);
+
+    // 2. Cercle de limite rouge néon continu
+    L.circle(centerLatLng, {
+      radius: zoneRadiusMeters,
+      color: '#ef4444',
+      weight: 4,
+      opacity: 0.95,
+      fill: false,
+      interactive: false,
+    }).addTo(layer);
+
+    // 3. Halo lumineux extérieur pointillé
+    L.circle(centerLatLng, {
+      radius: zoneRadiusMeters + 4,
+      color: '#f87171',
+      weight: 2,
+      dashArray: '10, 10',
+      opacity: 0.75,
+      fill: false,
+      interactive: false,
+    }).addTo(layer);
+
+    // 4. Badges cardinaux "⛔ LIMITE DE ZONE" le long du périmètre
+    const cardinalAngles = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+    cardinalAngles.forEach((ang) => {
+      const tagLat = zoneCenter.lat + (zoneRadiusMeters * Math.cos(ang)) / 111111;
+      const tagLng =
+        zoneCenter.lng +
+        (zoneRadiusMeters * Math.sin(ang)) /
+          (111111 * Math.cos((zoneCenter.lat * Math.PI) / 180));
+
+      const tagIcon = L.divIcon({
+        html: `
+          <div style="display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);">
+            <span style="
+              background: rgba(239, 68, 68, 0.95);
+              color: #ffffff;
+              font-size: 9px;
+              font-weight: 900;
+              padding: 2px 8px;
+              border-radius: 999px;
+              border: 1.5px solid #ffffff;
+              box-shadow: 0 0 14px #ef4444;
+              letter-spacing: 1px;
+              white-space: nowrap;
+            ">⛔ LIMITE</span>
+          </div>
+        `,
+        className: 'boundary-tag-marker',
+        iconSize: [80, 20],
+        iconAnchor: [40, 10],
+      });
+
+      L.marker([tagLat, tagLng], { icon: tagIcon, interactive: false }).addTo(layer);
+    });
   }, [zoneCenter, zoneRadiusMeters]);
 
-  // Position du joueur courant + auto-centrage initial
+  // Position du joueur courant + auto-centrage fluide
   useEffect(() => {
     if (!mapRef.current || !userPosition) return;
 
     const userLatLng = L.latLng(userPosition.lat, userPosition.lng);
 
-    if (!hasAutoCenteredRef.current) {
+    // Centrage automatique initial OU premier fix GPS réel précis
+    if (
+      !hasAutoCenteredRef.current ||
+      (!hasCenteredOnGpsRef.current && accuracy && accuracy < 100)
+    ) {
       mapRef.current.setView(userLatLng, 16, { animate: true });
       hasAutoCenteredRef.current = true;
+      if (accuracy && accuracy < 100) {
+        hasCenteredOnGpsRef.current = true;
+      }
     }
 
     const markerColor = isRunner ? '#06b6d4' : '#f59e0b';
     const roleIcon = isRunner ? '🏃' : '🏹';
+
     const markerHtml = `
-      <div style="display: flex; flex-direction: column; align-items: center;">
-        <div style="
-          position: relative;
-          width: 20px;
-          height: 20px;
-          background: ${markerColor};
-          border: 3px solid #ffffff;
-          border-radius: 50%;
-          box-shadow: 0 0 16px ${markerColor}, 0 0 30px ${markerColor};
-        "></div>
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(-50%, -50%);">
+        <div style="position: relative; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;">
+          <div style="
+            position: absolute;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: ${markerColor};
+            opacity: 0.35;
+            animation: radar-pulse 2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+          "></div>
+          <div style="
+            width: 22px;
+            height: 22px;
+            background: ${markerColor};
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 20px ${markerColor}, 0 0 40px ${markerColor};
+            z-index: 2;
+          "></div>
+        </div>
         <span style="
-          margin-top: 2px;
+          margin-top: 3px;
           font-size: 10px;
-          font-weight: bold;
+          font-weight: 800;
           color: #ffffff;
-          background: rgba(0,0,0,0.85);
-          border: 1px solid ${markerColor};
-          padding: 1px 6px;
-          border-radius: 6px;
+          background: #000000;
+          border: 1.5px solid ${markerColor};
+          padding: 1.5px 8px;
+          border-radius: 8px;
           white-space: nowrap;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.5);
-        ">${roleIcon} Moi</span>
+          box-shadow: 0 2px 8px rgba(0,0,0,0.8);
+          z-index: 3;
+        ">${roleIcon} VOUS</span>
       </div>
     `;
 
     const icon = L.divIcon({
       html: markerHtml,
       className: 'custom-user-marker',
-      iconSize: [60, 40],
-      iconAnchor: [30, 10],
+      iconSize: [60, 48],
+      iconAnchor: [30, 24],
     });
 
     if (userMarkerRef.current) {
@@ -236,23 +361,21 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           radius: accuracy,
           color: markerColor,
           weight: 1,
-          opacity: 0.3,
+          opacity: 0.35,
           fillColor: markerColor,
-          fillOpacity: 0.08,
+          fillOpacity: 0.1,
         }).addTo(mapRef.current);
       }
     }
   }, [userPosition, accuracy, isRunner]);
 
-  // Coéquipiers
+  // Coéquipiers visibles en direct
   useEffect(() => {
     if (!mapRef.current || !teammatesLayerRef.current) return;
     teammatesLayerRef.current.clearLayers();
 
     players.forEach((player) => {
       if (player.id !== currentUserId && player.position) {
-        // En mode chasseur : voir tous les autres chasseurs
-        // En mode fuyard : voir tous les autres fuyards
         const isTeammate =
           (isRunner && player.role === 'runner') ||
           (!isRunner && player.role === 'hunter');
@@ -263,35 +386,35 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           const roleBadge = player.role === 'runner' ? '🏃' : '🏹';
 
           const markerHtml = `
-            <div style="display: flex; flex-direction: column; align-items: center;">
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(-50%, -50%);">
               <div style="
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
                 background: ${color};
                 border: 2px solid #ffffff;
                 border-radius: 50%;
-                box-shadow: 0 0 12px ${color};
+                box-shadow: 0 0 14px ${color};
               "></div>
               <span style="
                 margin-top: 2px;
                 font-size: 9px;
-                font-weight: 600;
+                font-weight: 700;
                 color: ${labelColor};
                 background: rgba(0,0,0,0.85);
-                border: 1px solid rgba(255,255,255,0.15);
-                padding: 1px 5px;
-                border-radius: 4px;
+                border: 1px solid rgba(255,255,255,0.2);
+                padding: 1px 6px;
+                border-radius: 6px;
                 white-space: nowrap;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.6);
+                box-shadow: 0 2px 6px rgba(0,0,0,0.7);
               ">${roleBadge} ${player.name}</span>
             </div>
           `;
 
           const icon = L.divIcon({
             html: markerHtml,
-            className: 'teammate-marker',
-            iconSize: [60, 36],
-            iconAnchor: [30, 8],
+            className: 'custom-teammate-marker',
+            iconSize: [70, 36],
+            iconAnchor: [35, 12],
           });
 
           L.marker([player.position.lat, player.position.lng], {
@@ -318,11 +441,22 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     });
   }, [lastPings]);
 
+  // Recentrer sur soi
   const handleRecenter = () => {
     if (mapRef.current && userPosition) {
       mapRef.current.setView([userPosition.lat, userPosition.lng], 16, {
         animate: true,
       });
+    }
+  };
+
+  // Afficher TOUTE la zone de jeu et ses limites en 1 clic
+  const handleFitZone = () => {
+    if (mapRef.current) {
+      const bounds = L.circle([zoneCenter.lat, zoneCenter.lng], {
+        radius: zoneRadiusMeters,
+      }).getBounds();
+      mapRef.current.fitBounds(bounds, { padding: [40, 40], animate: true });
     }
   };
 
@@ -372,8 +506,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         </div>
       )}
 
-      {/* Badge Indicateur GPS Temps Réel (Top Left) */}
-      <div className="absolute top-16 left-4 z-10 flex items-center gap-2 bg-black/85 border border-slate-700/60 backdrop-blur-md px-3 py-1.5 rounded-full text-[10px] font-mono shadow-lg">
+      {/* Badge Indicateur GPS (Top Left) */}
+      <div className="absolute top-16 left-3 z-10 flex items-center gap-2 bg-black/85 border border-slate-700/60 backdrop-blur-md px-3 py-1.5 rounded-full text-[10px] font-mono shadow-lg">
         <Radio
           className={`w-3.5 h-3.5 ${
             userPosition ? 'text-emerald-400 animate-pulse' : 'text-amber-400 animate-ping'
@@ -384,8 +518,51 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         </span>
       </div>
 
-      {/* Commandes Droite : Mute + Recentrer (Positionnées au-dessus du dock d'actions) */}
-      <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-2.5 pointer-events-auto">
+      {/* Badge Distance aux Limites de Zone (Top Right) */}
+      {distToBoundary !== null && (
+        <div
+          className={`absolute top-16 right-3 z-10 flex items-center gap-1.5 border backdrop-blur-md px-3 py-1.5 rounded-full text-[10px] font-mono shadow-lg transition ${
+            isOutsideLimit
+              ? 'bg-red-950/90 border-red-500 text-red-300 font-bold animate-pulse'
+              : distToBoundary < 100
+              ? 'bg-amber-950/90 border-amber-500 text-amber-300 font-bold'
+              : 'bg-black/85 border-slate-700/60 text-slate-300'
+          }`}
+        >
+          {isOutsideLimit ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-red-400" />
+          )}
+          <span>
+            {isOutsideLimit
+              ? `HORS ZONE (${Math.abs(distToBoundary)}m)`
+              : `Limite : ${distToBoundary}m`}
+          </span>
+        </div>
+      )}
+
+      {/* Commandes Droite : Limites (Vue globale) + Recentrer (Moi) + Mute */}
+      <div className="absolute bottom-24 right-3 z-10 flex flex-col gap-2.5 pointer-events-auto">
+        {/* Bouton Voir Toutes les Limites */}
+        <button
+          onClick={handleFitZone}
+          className="w-11 h-11 bg-black/85 border border-red-500/50 hover:border-red-400 rounded-full flex items-center justify-center text-red-400 backdrop-blur-md active-press shadow-lg shadow-red-950/50"
+          title="Afficher toute la zone de jeu et ses limites"
+        >
+          <Globe className="w-5 h-5 animate-pulse" />
+        </button>
+
+        {/* Bouton Recentrer sur Moi */}
+        <button
+          onClick={handleRecenter}
+          className="w-11 h-11 bg-black/85 border border-cyan-500/50 hover:border-cyan-400 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-950/50"
+          title="Recentrer sur mon avatar"
+        >
+          <Crosshair className="w-5 h-5 animate-spin" />
+        </button>
+
+        {/* Bouton Audio */}
         <button
           onClick={handleToggleMute}
           className={`w-11 h-11 border rounded-full flex items-center justify-center backdrop-blur-md active-press shadow-lg ${
@@ -397,18 +574,10 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         >
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
-
-        <button
-          onClick={handleRecenter}
-          className="w-11 h-11 bg-black/80 border border-cyan-500/40 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-500/20"
-          title="Recentrer sur ma position"
-        >
-          <Crosshair className="w-5 h-5 animate-pulse" />
-        </button>
       </div>
 
       {/* Commandes Gauche : Mode Simulation (Indoor/Test living room) */}
-      <div className="absolute bottom-24 left-4 z-10 flex flex-col gap-2 pointer-events-auto">
+      <div className="absolute bottom-24 left-3 z-10 flex flex-col gap-2 pointer-events-auto">
         <button
           onClick={() => setSimMode(!simMode)}
           className={`px-3 py-2 rounded-xl border text-[10px] font-mono font-bold flex items-center gap-1.5 backdrop-blur-md active-press shadow-lg ${
@@ -418,7 +587,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           }`}
         >
           <Footprints className="w-3.5 h-3.5" />
-          <span>{simMode ? '🕹️ Simu' : '🛰️ GPS'}</span>
+          <span>{simMode ? '🕹️ Simu Active' : '🛰️ GPS'}</span>
         </button>
 
         {simMode && (
@@ -450,7 +619,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-            <span className="text-[8px] text-slate-500">ou cliquez sur la carte</span>
+            <span className="text-[8px] text-slate-500">ou touchez la carte</span>
           </div>
         )}
       </div>
