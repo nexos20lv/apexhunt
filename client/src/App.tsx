@@ -44,30 +44,15 @@ export const App: React.FC = () => {
     }
   }, [feedback, clearFeedback]);
 
-  const [manualPosition, setManualPosition] = React.useState<{ lat: number; lng: number } | null>(null);
-
   const currentPlayer = roomState?.players.find((p) => p.id === playerId);
   const isRunner = currentPlayer?.role === 'runner';
 
-  // Position effective : GPS réel, sinon déplacement manuel/simulation, sinon position serveur
+  // Position effective : GPS réel en direct, sinon dernière position connue
   const effectivePosition =
     position ||
-    manualPosition ||
     currentPlayer?.position ||
     roomState?.settings.zoneCenter ||
     null;
-
-  const handleManualPositionChange = (lat: number, lng: number) => {
-    setManualPosition({ lat, lng });
-    updatePosition(lat, lng, 5);
-  };
-
-  // Synchronise en continu la position avec le serveur dès qu'on rejoint la room (même avant fix GPS)
-  useEffect(() => {
-    if (effectivePosition && isConnected && roomState) {
-      updatePosition(effectivePosition.lat, effectivePosition.lng, accuracy ?? 5);
-    }
-  }, [effectivePosition?.lat, effectivePosition?.lng, isConnected, roomState?.code, updatePosition]);
 
   // Centre automatiquement la zone de jeu sur la position GPS réelle de l'hôte
   useEffect(() => {
@@ -150,7 +135,6 @@ export const App: React.FC = () => {
         currentUserId={playerId}
         isRunner={isRunner}
         lastPings={roomState.lastPings}
-        onManualPositionChange={handleManualPositionChange}
       />
 
       {/* Superposition du HUD adapté selon le rôle */}

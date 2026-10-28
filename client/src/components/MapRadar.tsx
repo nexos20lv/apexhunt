@@ -8,11 +8,6 @@ import {
   Navigation,
   Volume2,
   VolumeX,
-  Footprints,
-  ArrowUp,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
   Globe,
   AlertTriangle,
 } from 'lucide-react';
@@ -27,7 +22,6 @@ interface MapRadarProps {
   currentUserId: string;
   isRunner: boolean;
   lastPings: SonarPingPublic[];
-  onManualPositionChange?: (lat: number, lng: number) => void;
 }
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -91,15 +85,15 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   currentUserId,
   isRunner,
   lastPings,
-  onManualPositionChange,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const hasAutoCenteredRef = useRef(false);
   const hasCenteredOnGpsRef = useRef(false);
+  const isFollowingRef = useRef(true);
 
   const [isMuted, setIsMuted] = useState(soundFX.isMuted);
-  const [simMode, setSimMode] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(true);
 
   // Layers refs
   const zoneBoundaryLayerRef = useRef<L.LayerGroup | null>(null);
@@ -191,11 +185,10 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     teammatesLayerRef.current = L.layerGroup().addTo(map);
     pingsLayerRef.current = L.layerGroup().addTo(map);
 
-    // Clic tactile ou souris sur la carte pour déplacer son avatar
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      if (onManualPositionChange) {
-        onManualPositionChange(e.latlng.lat, e.latlng.lng);
-      }
+    // Détection du glissement manuel : suspend le recentrage automatique pour laisser explorer
+    map.on('dragstart', () => {
+      isFollowingRef.current = false;
+      setIsFollowing(false);
     });
 
     mapRef.current = map;
@@ -295,6 +288,9 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       if (accuracy && accuracy < 100) {
         hasCenteredOnGpsRef.current = true;
       }
+    } else if (isFollowingRef.current) {
+      // Suivi de caméra automatique et fluide dès que le joueur avance
+      mapRef.current.panTo(userLatLng, { animate: true, duration: 0.6 });
     }
 
     const markerColor = isRunner ? '#06b6d4' : '#f59e0b';
@@ -441,9 +437,11 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     });
   }, [lastPings]);
 
-  // Recentrer sur soi
+  // Recentrer sur soi et reverrouiller le suivi caméra automatique
   const handleRecenter = () => {
     if (mapRef.current && userPosition) {
+      isFollowingRef.current = true;
+      setIsFollowing(true);
       mapRef.current.setView([userPosition.lat, userPosition.lng], 16, {
         animate: true,
       });
@@ -453,6 +451,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   // Afficher TOUTE la zone de jeu et ses limites en 1 clic
   const handleFitZone = () => {
     if (mapRef.current) {
+      isFollowingRef.current = false;
+      setIsFollowing(false);
       const bounds = L.circle([zoneCenter.lat, zoneCenter.lng], {
         radius: zoneRadiusMeters,
       }).getBounds();
@@ -463,12 +463,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   const handleToggleMute = () => {
     const muted = soundFX.toggleMute();
     setIsMuted(muted);
-  };
-
-  const handleSimMove = (dLat: number, dLng: number) => {
-    if (!onManualPositionChange) return;
-    const base = userPosition || zoneCenter;
-    onManualPositionChange(base.lat + dLat, base.lng + dLng);
   };
 
   return (
@@ -514,7 +508,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           }`}
         />
         <span className={userPosition ? 'text-emerald-300 font-semibold' : 'text-amber-300 font-semibold'}>
-          {userPosition ? `GPS FIX (~${accuracy ?? 5}m)` : 'RECHERCHE GPS...'}
+          {userPosition ? `GPS ACTIF (~${accuracy ?? 5}m)` : 'RECHERCHE GPS...'}
         </span>
       </div>
 
@@ -553,13 +547,17 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           <Globe className="w-5 h-5 animate-pulse" />
         </button>
 
-        {/* Bouton Recentrer sur Moi */}
+        {/* Bouton Recentrer / Suivi Automatique sur Moi */}
         <button
           onClick={handleRecenter}
-          className="w-11 h-11 bg-black/85 border border-cyan-500/50 hover:border-cyan-400 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-950/50"
-          title="Recentrer sur mon avatar"
+          className={`w-11 h-11 border rounded-full flex items-center justify-center backdrop-blur-md active-press shadow-lg transition-all duration-300 ${
+            isFollowing
+              ? 'bg-cyan-950/90 border-cyan-400 text-cyan-300 shadow-cyan-950/60 ring-2 ring-cyan-500/30'
+              : 'bg-black/85 border-slate-700/80 hover:border-cyan-400/70 text-slate-400 hover:text-cyan-300 shadow-black/80'
+          }`}
+          title={isFollowing ? 'Suivi GPS verrouillé' : 'Cliquer pour reverrouiller le suivi GPS'}
         >
-          <Crosshair className="w-5 h-5 animate-spin" />
+          <Crosshair className={`w-5 h-5 ${isFollowing ? 'text-cyan-300' : 'text-slate-400'}`} />
         </button>
 
         {/* Bouton Audio */}
@@ -574,54 +572,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         >
           {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
         </button>
-      </div>
-
-      {/* Commandes Gauche : Mode Simulation (Indoor/Test living room) */}
-      <div className="absolute bottom-24 left-3 z-10 flex flex-col gap-2 pointer-events-auto">
-        <button
-          onClick={() => setSimMode(!simMode)}
-          className={`px-3 py-2 rounded-xl border text-[10px] font-mono font-bold flex items-center gap-1.5 backdrop-blur-md active-press shadow-lg ${
-            simMode
-              ? 'bg-cyan-950 border-cyan-400 text-cyan-300'
-              : 'bg-black/80 border-slate-700 text-slate-400'
-          }`}
-        >
-          <Footprints className="w-3.5 h-3.5" />
-          <span>{simMode ? '🕹️ Simu Active' : '🛰️ GPS'}</span>
-        </button>
-
-        {simMode && (
-          <div className="bg-black/90 border border-cyan-500/40 p-2 rounded-xl backdrop-blur-md flex flex-col items-center gap-1 shadow-2xl animate-in fade-in duration-200">
-            <span className="text-[9px] text-slate-400 uppercase font-bold">Déplacer (20m)</span>
-            <button
-              onClick={() => handleSimMove(0.0002, 0)}
-              className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 active-press"
-            >
-              <ArrowUp className="w-4 h-4" />
-            </button>
-            <div className="flex gap-1">
-              <button
-                onClick={() => handleSimMove(0, -0.00025)}
-                className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 active-press"
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSimMove(-0.0002, 0)}
-                className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 active-press"
-              >
-                <ArrowDown className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleSimMove(0, 0.00025)}
-                className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-cyan-400 active-press"
-              >
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-            <span className="text-[8px] text-slate-500">ou touchez la carte</span>
-          </div>
-        )}
       </div>
 
       <div className="absolute inset-0 pointer-events-none border border-white/5 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)] z-[1]" />

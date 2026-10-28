@@ -13,8 +13,10 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
   const [wakeLockActive, setWakeLockActive] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
+  const pollIntervalRef = useRef<any>(null);
   const wakeLockRef = useRef<any>(null);
   const callbackRef = useRef(onPositionUpdate);
+  const lastCoordsRef = useRef<GeoCoordinates | null>(null);
 
   useEffect(() => {
     callbackRef.current = onPositionUpdate;
@@ -45,6 +47,44 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
     }
   }, []);
 
+  const handleNewPosition = useCallback((pos: GeolocationPosition) => {
+    const coords: GeoCoordinates = {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+    };
+    const acc = Math.round(pos.coords.accuracy);
+
+    // Vérifie si la position a bougé significativement ou si première position
+    const last = lastCoordsRef.current;
+    if (
+      !last ||
+      Math.abs(last.lat - coords.lat) > 0.000005 ||
+      Math.abs(last.lng - coords.lng) > 0.000005
+    ) {
+      lastCoordsRef.current = coords;
+      setPosition(coords);
+      setAccuracy(acc);
+      setError(null);
+
+      if (callbackRef.current) {
+        callbackRef.current(coords, acc);
+      }
+    } else {
+      // Même position, met à jour la précision
+      setAccuracy(acc);
+    }
+  }, []);
+
+  const handleGpsError = useCallback((err: GeolocationPositionError) => {
+    let msg = 'Signal GPS en cours d’acquisition...';
+    if (err.code === err.PERMISSION_DENIED) {
+      msg = '⚠️ Autorisation GPS refusée. Veuillez activer la géolocalisation dans les paramètres de votre navigateur.';
+    } else if (err.code === err.POSITION_UNAVAILABLE) {
+      msg = 'Signal satellite GPS faible ou indisponible.';
+    }
+    setError(msg);
+  }, []);
+
   const startTracking = useCallback(() => {
     if (!('geolocation' in navigator)) {
       setError('La géolocalisation n’est pas supportée par votre navigateur');
@@ -55,61 +95,51 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
     setIsTracking(true);
     setError(null);
 
-    // Récupère une première position immédiate
+    // 1. Position immédiate
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords: GeoCoordinates = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        const acc = Math.round(pos.coords.accuracy);
-        setPosition(coords);
-        setAccuracy(acc);
-        if (callbackRef.current) callbackRef.current(coords, acc);
-      },
-      (err) => {
-        console.warn('Échec première géolocalisation:', err.message);
-      },
+      handleNewPosition,
+      handleGpsError,
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     );
 
-    // Écoute les déplacements en continu
+    // 2. Écoute continue watchPosition
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
+
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const coords: GeoCoordinates = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        const acc = Math.round(pos.coords.accuracy);
-
-        setPosition(coords);
-        setAccuracy(acc);
-
-        if (callbackRef.current) {
-          callbackRef.current(coords, acc);
-        }
-      },
-      (err) => {
-        let msg = 'Signal GPS introuvable';
-        if (err.code === err.PERMISSION_DENIED) {
-          msg = 'Autorisation GPS refusée. Veuillez activer la localisation dans les réglages.';
-        } else if (err.code === err.TIMEOUT) {
-          msg = 'Recherche du signal satellite GPS en cours...';
-        }
-        setError(msg);
-      },
+      handleNewPosition,
+      handleGpsError,
       {
         enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 10000,
+        maximumAge: 0,
+        timeout: 20000,
       }
     );
-  }, [acquireWakeLock]);
+
+    // 3. Heartbeat Polling de secours actif (toutes les 2.5 secondes)
+    // Empêche le GPS mobile de s'endormir ou de décrocher
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+    }
+
+    pollIntervalRef.current = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        handleNewPosition,
+        () => {}, // Silencieux en cas de timeout temporaire pour ne pas écraser
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    }, 2500);
+  }, [acquireWakeLock, handleNewPosition, handleGpsError]);
 
   const stopTracking = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
+    }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
     }
     releaseWakeLock();
     setIsTracking(false);
