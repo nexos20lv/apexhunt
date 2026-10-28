@@ -29,10 +29,12 @@ export interface RoomPublicState {
     zoneRadiusMeters: number;
   };
   players: PlayerPublic[];
+  activeRunnersCount: number;
+  activeHuntersCount: number;
   remainingTimeSeconds: number;
   headStartRemainingSeconds: number;
   nextPingInSeconds: number;
-  lastPing: SonarPingPublic | null;
+  lastPings: SonarPingPublic[];
   secretCode?: string;
 }
 
@@ -44,7 +46,6 @@ export function useGameSocket() {
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
 
-  // ID éphémère persistant par session de navigateur
   const getPlayerId = () => {
     let id = sessionStorage.getItem('apexhunt_player_id');
     if (!id) {
@@ -59,9 +60,7 @@ export function useGameSocket() {
   const connect = useCallback(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) return;
 
-    // Détermine l'URL WebSocket en fonction de l'environnement
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Si en dev vite (port 5173), pointe vers le port backend 4000 par défaut
     const host =
       window.location.port === '5173'
         ? `${window.location.hostname}:4000`
@@ -84,14 +83,18 @@ export function useGameSocket() {
         } else if (msg.type === 'sonar_ping') {
           setRoomState(msg.room);
           soundFX.playSonarPing();
+        } else if (msg.type === 'player_infected') {
+          setRoomState(msg.room);
+          setFeedback({
+            message: msg.payload?.message || 'Un fuyard a été infecté !',
+            type: 'success',
+          });
+          soundFX.playCaptureSound(true);
         } else if (msg.type === 'capture_feedback') {
           setFeedback({
             message: msg.message,
             type: msg.success ? 'success' : 'error',
           });
-          if (msg.success) {
-            soundFX.playCaptureSound(true);
-          }
         } else if (msg.type === 'perk_feedback') {
           setFeedback({
             message: msg.message,
@@ -107,7 +110,6 @@ export function useGameSocket() {
 
     ws.onclose = () => {
       setIsConnected(false);
-      // Tentative de reconnexion après 2 secondes
       reconnectTimeoutRef.current = setTimeout(() => {
         connect();
       }, 2000);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { RoomPublicState } from '../hooks/useGameSocket';
-import { Shield, EyeOff, Radio, AlertTriangle, Clock } from 'lucide-react';
+import { Shield, EyeOff, Radio, AlertTriangle, Clock, Users } from 'lucide-react';
 
 interface RunnerHUDProps {
   roomState: RoomPublicState;
@@ -29,11 +29,17 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
             <span className="text-xs font-semibold uppercase tracking-wider text-cyan-400">
-              Rôle : Fuyard
+              Fuyard
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-slate-200">
+          {/* Compteur de fuyards encore en liberté */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-cyan-950/50 border border-cyan-500/30 rounded-lg text-xs font-bold text-cyan-300">
+            <Users className="w-3.5 h-3.5" />
+            <span>{roomState.activeRunnersCount} fuyard(s) restants</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-slate-200">
             <Clock className="w-4 h-4 text-cyan-400" />
             <span className="font-mono text-sm font-bold">
               {formatTime(roomState.remainingTimeSeconds)}
@@ -53,18 +59,18 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
         )}
       </div>
 
-      {/* Code Secret 4 Chiffres (Cœur de la capture) */}
+      {/* Code Secret 4 Chiffres Unique du joueur */}
       <div className="pointer-events-auto flex flex-col items-center my-auto">
         <div className="bg-black/90 border-2 border-cyan-400/80 rounded-2xl p-6 backdrop-blur-xl shadow-[0_0_35px_rgba(6,182,212,0.35)] text-center flex flex-col items-center max-w-xs w-full">
           <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400/80 mb-1 flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5 text-cyan-400" />
-            Code Secret de Capture
+            Votre Code Secret Personnel
           </div>
           <div className="text-4xl font-extrabold tracking-[0.35em] text-cyan-300 font-orbitron my-2 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
             {secretCode}
           </div>
           <p className="text-[10px] text-slate-400 leading-tight">
-            Les chasseurs doivent vous rattraper physiquement pour lire et entrer ce code.
+            Si un chasseur vous rattrape et tape ce code, vous serez <strong>infecté</strong> et deviendrez chasseur à votre tour !
           </p>
         </div>
 
@@ -80,7 +86,7 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
         </div>
       </div>
 
-      {/* Barre d'Atouts Tactiques Inférieure */}
+      {/* Barre d'Atouts Tactiques */}
       <div className="pointer-events-auto grid grid-cols-2 gap-3 mb-2">
         <button
           onClick={() => onUsePerk('ghost')}

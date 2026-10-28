@@ -11,7 +11,7 @@ interface MapRadarProps {
   players: PlayerPublic[];
   currentUserId: string;
   isRunner: boolean;
-  lastPing: SonarPingPublic | null;
+  lastPings: SonarPingPublic[];
 }
 
 export const MapRadar: React.FC<MapRadarProps> = ({
@@ -22,7 +22,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   players,
   currentUserId,
   isRunner,
-  lastPing,
+  lastPings,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -31,8 +31,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   const zoneCircleRef = useRef<L.Circle | null>(null);
   const userMarkerRef = useRef<L.Marker | null>(null);
   const userAccCircleRef = useRef<L.Circle | null>(null);
-  const huntersLayerRef = useRef<L.LayerGroup | null>(null);
-  const pingCircleRef = useRef<L.Circle | null>(null);
+  const teammatesLayerRef = useRef<L.LayerGroup | null>(null);
+  const pingsLayerRef = useRef<L.LayerGroup | null>(null);
 
   // Initialisation de la carte Leaflet
   useEffect(() => {
@@ -46,15 +46,14 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       attributionControl: false,
     });
 
-    // Tuiles CartoDB Dark Matter (ultra légères, thème stealth OLED)
+    // Tuiles CartoDB Dark Matter
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
       subdomains: 'abcd',
     }).addTo(map);
 
-    // Groupe pour les autres joueurs
-    const huntersLayer = L.layerGroup().addTo(map);
-    huntersLayerRef.current = huntersLayer;
+    teammatesLayerRef.current = L.layerGroup().addTo(map);
+    pingsLayerRef.current = L.layerGroup().addTo(map);
 
     mapRef.current = map;
 
@@ -64,7 +63,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     };
   }, []);
 
-  // Mise à jour de la zone de jeu
+  // Zone de jeu
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -83,13 +82,11 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     }
   }, [zoneCenter, zoneRadiusMeters]);
 
-  // Mise à jour de la position de l'utilisateur
+  // Position du joueur courant
   useEffect(() => {
     if (!mapRef.current || !userPosition) return;
 
     const userLatLng = L.latLng(userPosition.lat, userPosition.lng);
-
-    // Couleur : Cyan (#06b6d4) pour fuyard, Ambre (#f59e0b) pour chasseur
     const markerColor = isRunner ? '#06b6d4' : '#f59e0b';
     const markerHtml = `
       <div style="
@@ -117,7 +114,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       userMarkerRef.current = L.marker(userLatLng, { icon }).addTo(mapRef.current);
     }
 
-    // Cercle de précision GPS
     if (accuracy && accuracy < 60) {
       if (userAccCircleRef.current) {
         userAccCircleRef.current.setLatLng(userLatLng);
@@ -135,28 +131,36 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     }
   }, [userPosition, accuracy, isRunner]);
 
-  // Mise à jour des co-chasseurs (uniquement visible entre chasseurs)
+  // Position des coéquipiers (Chasseurs voient Chasseurs, Fuyards voient Fuyards)
   useEffect(() => {
-    if (!mapRef.current || !huntersLayerRef.current) return;
-    huntersLayerRef.current.clearLayers();
+    if (!mapRef.current || !teammatesLayerRef.current) return;
+    teammatesLayerRef.current.clearLayers();
 
-    if (!isRunner) {
-      players.forEach((player) => {
-        if (player.id !== currentUserId && player.role === 'hunter' && player.position) {
-          const hunterHtml = `
+    players.forEach((player) => {
+      // Si c'est un autre joueur et que sa position est partagée (même camp)
+      if (player.id !== currentUserId && player.position) {
+        const isTeammate =
+          (isRunner && player.role === 'runner') ||
+          (!isRunner && player.role === 'hunter');
+
+        if (isTeammate) {
+          const color = player.role === 'runner' ? '#06b6d4' : '#f97316';
+          const labelColor = player.role === 'runner' ? '#a5f3fc' : '#fed7aa';
+
+          const markerHtml = `
             <div style="display: flex; flex-direction: column; align-items: center;">
               <div style="
                 width: 14px;
                 height: 14px;
-                background: #f97316;
+                background: ${color};
                 border: 2px solid #fff;
                 border-radius: 50%;
-                box-shadow: 0 0 8px #f97316;
+                box-shadow: 0 0 8px ${color};
               "></div>
               <span style="
                 margin-top: 2px;
                 font-size: 9px;
-                color: #fed7aa;
+                color: ${labelColor};
                 background: rgba(0,0,0,0.7);
                 padding: 1px 4px;
                 border-radius: 4px;
@@ -165,45 +169,36 @@ export const MapRadar: React.FC<MapRadarProps> = ({
             </div>
           `;
 
-          const hunterIcon = L.divIcon({
-            html: hunterHtml,
-            className: 'hunter-marker',
+          const icon = L.divIcon({
+            html: markerHtml,
+            className: 'teammate-marker',
             iconSize: [40, 26],
             iconAnchor: [20, 7],
           });
 
           L.marker([player.position.lat, player.position.lng], {
-            icon: hunterIcon,
-          }).addTo(huntersLayerRef.current!);
+            icon,
+          }).addTo(teammatesLayerRef.current!);
         }
-      });
-    }
+      }
+    });
   }, [players, currentUserId, isRunner]);
 
-  // Mise à jour du Ping Sonar du fuyard
+  // Mise à jour de tous les pings sonar actifs
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!mapRef.current || !pingsLayerRef.current) return;
+    pingsLayerRef.current.clearLayers();
 
-    if (lastPing) {
-      const pingLatLng = L.latLng(lastPing.lat, lastPing.lng);
-
-      if (pingCircleRef.current) {
-        pingCircleRef.current.setLatLng(pingLatLng);
-        pingCircleRef.current.setRadius(lastPing.radiusMeters);
-      } else {
-        pingCircleRef.current = L.circle(pingLatLng, {
-          radius: lastPing.radiusMeters,
-          color: '#ef4444',
-          weight: 2,
-          fillColor: '#ef4444',
-          fillOpacity: 0.25,
-        }).addTo(mapRef.current);
-      }
-    } else if (pingCircleRef.current) {
-      pingCircleRef.current.remove();
-      pingCircleRef.current = null;
-    }
-  }, [lastPing]);
+    lastPings.forEach((ping) => {
+      L.circle([ping.lat, ping.lng], {
+        radius: ping.radiusMeters,
+        color: '#ef4444',
+        weight: 2,
+        fillColor: '#ef4444',
+        fillOpacity: 0.25,
+      }).addTo(pingsLayerRef.current!);
+    });
+  }, [lastPings]);
 
   const handleRecenter = () => {
     if (mapRef.current && userPosition) {
@@ -215,10 +210,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
 
   return (
     <div className="relative w-full h-full">
-      {/* Conteneur de carte */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      {/* Bouton Recentrer Tactique (Touch-friendly 44x44px) */}
       <button
         onClick={handleRecenter}
         className="absolute bottom-6 right-4 z-10 w-12 h-12 bg-black/80 border border-cyan-500/40 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-500/20"
@@ -227,7 +220,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         <Crosshair className="w-6 h-6 animate-pulse" />
       </button>
 
-      {/* Grille réticule tactique d'ambiance */}
       <div className="absolute inset-0 pointer-events-none border border-white/5 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.4)_100%)] z-[1]" />
     </div>
   );

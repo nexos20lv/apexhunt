@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RoomPublicState } from '../hooks/useGameSocket';
-import { Radio, Crosshair, KeyRound, Clock, X, Check } from 'lucide-react';
+import { Radio, Crosshair, KeyRound, Clock, X, Check, Users } from 'lucide-react';
 import { soundFX } from '../audio/soundfx';
 
 interface HunterHUDProps {
@@ -42,6 +42,8 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
     }
   };
 
+  const pingsCount = roomState.lastPings?.length || 0;
+
   return (
     <div className="absolute inset-x-0 top-0 pointer-events-none z-10 flex flex-col justify-between p-4 h-full">
       {/* Header Chasseur */}
@@ -50,11 +52,17 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
             <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-              Rôle : Chasseur
+              Chasseur
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-slate-200">
+          {/* Décompte fuyards cibles */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/60 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300">
+            <Users className="w-3.5 h-3.5" />
+            <span>{roomState.activeRunnersCount} fuyard(s) restant(s)</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-slate-200">
             <Clock className="w-4 h-4 text-amber-400" />
             <span className="font-mono text-sm font-bold">
               {formatTime(roomState.remainingTimeSeconds)}
@@ -62,21 +70,19 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           </div>
         </div>
 
-        {/* Statut Sonar & Dernier repérage */}
+        {/* Statut Sonar & Pings détectés */}
         <div className="bg-black/80 border border-slate-700/60 rounded-xl p-3 flex items-center justify-between backdrop-blur-md">
           <div className="flex items-center gap-2.5">
             <Radio className="w-5 h-5 text-red-400 animate-pulse" />
             <div>
               <div className="text-[10px] text-slate-400 uppercase font-semibold">
-                Dernier Ping Sonar
+                Radars Actifs
               </div>
               <div className="text-xs text-slate-200 font-medium">
-                {roomState.lastPing ? (
-                  <span>
-                    Zone de ~{roomState.lastPing.radiusMeters}m détectée
-                  </span>
+                {pingsCount > 0 ? (
+                  <span>{pingsCount} zone(s) de fuyards repérée(s)</span>
                 ) : (
-                  <span className="text-slate-500 italic">En attente du premier ping...</span>
+                  <span className="text-slate-500 italic">En attente du prochain ping...</span>
                 )}
               </div>
             </div>
@@ -91,25 +97,25 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
         </div>
       </div>
 
-      {/* Bouton de Saisie de Capture (Bottom) */}
+      {/* Bouton de Saisie de Capture */}
       <div className="pointer-events-auto mb-2">
         <button
           onClick={() => setShowKeypad(true)}
           className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_25px_rgba(239,68,68,0.4)] active-press uppercase tracking-wider font-orbitron text-sm border border-red-400/30"
         >
           <Crosshair className="w-6 h-6 animate-spin" />
-          Capturer le Fuyard (Code)
+          Infecter un Fuyard (Code)
         </button>
       </div>
 
-      {/* Clavier Tactile Plein Écran pour la Capture (Modal Apple HIG) */}
+      {/* Clavier Tactile Plein Écran pour la Capture */}
       {showKeypad && (
         <div className="pointer-events-auto fixed inset-0 z-50 bg-black/95 flex flex-col justify-end p-6 backdrop-blur-xl animate-in fade-in duration-200">
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-2 text-amber-400">
               <KeyRound className="w-5 h-5" />
               <span className="text-sm font-bold uppercase tracking-wider font-orbitron">
-                Validation de Capture
+                Validation d'Infection
               </span>
             </div>
             <button
@@ -124,7 +130,7 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           </div>
 
           <p className="text-xs text-slate-400 text-center mb-6">
-            Lisez le code secret à 4 chiffres affiché sur l'écran du fuyard pour confirmer l'élimination :
+            Rattrapez un fuyard et entrez le code secret à 4 chiffres affiché sur son écran pour l'infecter et le faire rejoindre votre équipe :
           </p>
 
           {/* Affichage des 4 chiffres saisis */}
@@ -139,7 +145,7 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
             ))}
           </div>
 
-          {/* Pavé numérique tactile 3x4 ergonomique */}
+          {/* Pavé numérique tactile */}
           <div className="grid grid-cols-3 gap-3 max-w-xs mx-auto w-full mb-4">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'OK'].map((key) => {
               const isAction = key === 'C' || key === 'OK';

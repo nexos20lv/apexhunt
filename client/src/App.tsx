@@ -106,7 +106,7 @@ export const App: React.FC = () => {
         players={roomState.players}
         currentUserId={playerId}
         isRunner={isRunner}
-        lastPing={roomState.lastPing}
+        lastPings={roomState.lastPings}
       />
 
       {/* Superposition du HUD adapté selon le rôle */}
