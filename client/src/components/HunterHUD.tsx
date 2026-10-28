@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { RoomPublicState } from '../hooks/useGameSocket';
-import { Radio, Crosshair, KeyRound, Clock, X, Check, Users, Zap, Target } from 'lucide-react';
+import { Radio, Crosshair, KeyRound, Clock, X, Check, Users, Sparkles, Activity } from 'lucide-react';
 import { soundFX } from '../audio/soundfx';
+import { TacticalPerksSheet } from './TacticalPerksSheet';
+import { TacticalJournalSheet } from './TacticalJournalSheet';
 
 interface HunterHUDProps {
   roomState: RoomPublicState;
   onClaimCapture: (code: string) => void;
-  onUsePerk: (perk: 'sonar_flash' | 'triangulation') => void;
+  onUsePerk: (perk: 'ghost' | 'decoy' | 'sonar_flash' | 'triangulation') => void;
   userPosition: { lat: number; lng: number } | null;
 }
 
@@ -16,6 +18,8 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
   onUsePerk,
 }) => {
   const [showKeypad, setShowKeypad] = useState(false);
+  const [showPerksSheet, setShowPerksSheet] = useState(false);
+  const [showJournalSheet, setShowJournalSheet] = useState(false);
   const [enteredCode, setEnteredCode] = useState('');
 
   const perks = roomState.myPerks || {
@@ -24,6 +28,9 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
     sonarFlash: true,
     triangulation: true,
   };
+
+  const availablePerksCount =
+    (perks.sonarFlash ? 1 : 0) + (perks.triangulation ? 1 : 0);
 
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -54,127 +61,100 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
   const pingsCount = roomState.lastPings?.length || 0;
 
   return (
-    <div className="absolute inset-x-0 top-0 pointer-events-none z-10 flex flex-col justify-between p-4 h-full">
-      {/* Header Chasseur */}
-      <div className="pointer-events-auto flex flex-col gap-2">
-        <div className="flex items-center justify-between bg-black/85 border border-amber-500/30 rounded-xl px-4 py-2.5 backdrop-blur-md shadow-lg shadow-amber-950/40">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
-              Chasseur
-            </span>
-          </div>
-
-          {/* Décompte fuyards cibles */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-950/60 border border-amber-500/40 rounded-lg text-xs font-bold text-amber-300">
-            <Users className="w-3.5 h-3.5" />
-            <span>{roomState.activeRunnersCount} fuyard(s) restant(s)</span>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-slate-200">
-            <Clock className="w-4 h-4 text-amber-400" />
-            <span className="font-mono text-sm font-bold">
-              {roomState.state === 'head_start'
-                ? `Avance : ${formatTime(roomState.headStartRemainingSeconds)}`
-                : formatTime(roomState.remainingTimeSeconds)}
-            </span>
-          </div>
-        </div>
-
-        {/* Statut Sonar & Pings détectés */}
-        <div className="bg-black/80 border border-slate-700/60 rounded-xl p-3 flex items-center justify-between backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <Radio className="w-5 h-5 text-red-400 animate-pulse" />
-            <div>
-              <div className="text-[10px] text-slate-400 uppercase font-semibold">
-                Radars Actifs
-              </div>
-              <div className="text-xs text-slate-200 font-medium">
-                {pingsCount > 0 ? (
-                  <span>{pingsCount} zone(s) de fuyards repérée(s)</span>
-                ) : (
-                  <span className="text-slate-500 italic">En attente du prochain ping...</span>
-                )}
+    <>
+      {/* HUD Overlay Conteneur */}
+      <div className="absolute inset-0 pointer-events-none z-20 flex flex-col justify-between p-3">
+        {/* Top Floating Island (Minimaliste & Compacte) */}
+        <div className="pointer-events-auto flex flex-col items-center gap-1.5 w-full max-w-md mx-auto">
+          <div className="w-full bg-black/85 border border-amber-500/30 rounded-2xl px-3.5 py-2 backdrop-blur-xl shadow-xl flex items-center justify-between">
+            {/* Rôle & Équipe */}
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+              <div className="flex flex-col">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 font-orbitron leading-none">
+                  Chasseur
+                </span>
+                <span className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
+                  <Users className="w-2.5 h-2.5 text-amber-400" />
+                  {roomState.activeRunnersCount} cible(s)
+                </span>
               </div>
             </div>
-          </div>
 
-          <div className="text-right">
-            <div className="text-[10px] text-slate-400 uppercase">
-              {roomState.state === 'head_start' ? 'Début de Traque' : 'Prochain Ping'}
+            {/* Timer Global */}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/[0.05] border border-white/10 text-slate-100 font-mono text-xs font-bold">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                {roomState.state === 'head_start'
+                  ? `Avance : ${formatTime(roomState.headStartRemainingSeconds)}`
+                  : formatTime(roomState.remainingTimeSeconds)}
+              </span>
             </div>
-            <div className="text-sm font-bold text-amber-400 font-orbitron">
-              {roomState.state === 'head_start'
-                ? `${roomState.headStartRemainingSeconds}s`
-                : `${roomState.nextPingInSeconds}s`}
+
+            {/* Compte à rebours Ping Radar */}
+            <div className="flex items-center gap-1.5 text-right">
+              <Radio className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+              <div className="flex flex-col items-end">
+                <span className="text-[8px] uppercase tracking-wider text-slate-400 leading-none">
+                  {roomState.state === 'head_start'
+                    ? 'Début traque'
+                    : pingsCount > 0
+                    ? `${pingsCount} signal${pingsCount > 1 ? 's' : ''}`
+                    : 'Prochain Ping'}
+                </span>
+                <span className="font-orbitron text-xs font-bold text-amber-400 leading-tight">
+                  {roomState.state === 'head_start'
+                    ? `${roomState.headStartRemainingSeconds}s`
+                    : `${roomState.nextPingInSeconds}s`}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Section Basse : Bonus Chasseur (1x) + Bouton d'Infection */}
-      <div className="pointer-events-auto flex flex-col gap-3 mb-2">
-        {/* Atouts Tactiques Chasseur (1x par partie) */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={() => perks.sonarFlash && onUsePerk('sonar_flash')}
-            disabled={!perks.sonarFlash || roomState.state !== 'hunting'}
-            className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
-              perks.sonarFlash && roomState.state === 'hunting'
-                ? 'bg-black/85 border border-amber-500/50 hover:border-amber-400 text-amber-300 active-press cursor-pointer'
-                : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <Zap className={`w-4 h-4 ${perks.sonarFlash ? 'text-amber-400 animate-pulse' : 'text-slate-600'}`} />
-              <span className="text-xs font-bold uppercase tracking-wider">Sonar Flash</span>
-            </div>
-            <span className="text-[9px] text-slate-400">Scan immédiat fuyards</span>
-            <span
-              className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
-                perks.sonarFlash
-                  ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
-                  : 'bg-slate-900 text-slate-600 border border-slate-800'
-              }`}
-            >
-              {perks.sonarFlash ? '⚡ 1x Disponible' : '🔒 Épuisé'}
-            </span>
-          </button>
+        {/* Centre de l'écran : TOTALEMENT LIBRE pour une visibilité 100% de la carte */}
 
-          <button
-            onClick={() => perks.triangulation && onUsePerk('triangulation')}
-            disabled={!perks.triangulation || roomState.state !== 'hunting'}
-            className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
-              perks.triangulation && roomState.state === 'hunting'
-                ? 'bg-black/85 border border-red-500/50 hover:border-red-400 text-red-300 active-press cursor-pointer'
-                : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <Target className={`w-4 h-4 ${perks.triangulation ? 'text-red-400' : 'text-slate-600'}`} />
-              <span className="text-xs font-bold uppercase tracking-wider">Triangulation</span>
-            </div>
-            <span className="text-[9px] text-slate-400">Précision chirurgicale (~10m)</span>
-            <span
-              className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
-                perks.triangulation
-                  ? 'bg-red-950/80 text-red-300 border border-red-500/40'
-                  : 'bg-slate-900 text-slate-600 border border-slate-800'
-              }`}
+        {/* Bottom Floating Action Dock (Ergonomique au pouce) */}
+        <div className="pointer-events-auto w-full max-w-md mx-auto mb-1">
+          <div className="bg-black/90 border border-slate-800 rounded-2xl p-2 backdrop-blur-2xl shadow-[0_10px_35px_rgba(0,0,0,0.8)] flex items-center justify-between gap-2">
+            {/* Menu Atouts Tactiques */}
+            <button
+              onClick={() => setShowPerksSheet(true)}
+              className="flex-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-100 rounded-xl py-2.5 px-3 flex items-center justify-center gap-2 active-press transition"
             >
-              {perks.triangulation ? '🎯 1x Disponible' : '🔒 Épuisé'}
-            </span>
-          </button>
+              <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <div className="flex flex-col text-left leading-none">
+                <span className="text-[8px] uppercase tracking-wider text-slate-400 font-semibold">
+                  Bonus 1x
+                </span>
+                <span className="text-xs font-bold text-amber-300 font-orbitron">
+                  {availablePerksCount > 0 ? `${availablePerksCount} Atout(s)` : 'Épuisés'}
+                </span>
+              </div>
+            </button>
+
+            {/* Bouton Primaire Central : Infecter un Fuyard */}
+            <button
+              onClick={() => setShowKeypad(true)}
+              className="flex-[1.4] bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(239,68,68,0.4)] active-press uppercase tracking-wider font-orbitron text-xs border border-red-400/30 transition"
+            >
+              <Crosshair className="w-4 h-4" />
+              <span>Infecter</span>
+            </button>
+
+            {/* Menu Journal */}
+            <button
+              onClick={() => setShowJournalSheet(true)}
+              className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl py-2.5 px-3 flex items-center justify-center gap-1.5 active-press transition"
+              title="Ouvrir le journal de traque"
+            >
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-bold uppercase tracking-wider">
+                Journal
+              </span>
+            </button>
+          </div>
         </div>
-
-        {/* Bouton de Saisie de Capture */}
-        <button
-          onClick={() => setShowKeypad(true)}
-          className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_25px_rgba(239,68,68,0.4)] active-press uppercase tracking-wider font-orbitron text-sm border border-red-400/30"
-        >
-          <Crosshair className="w-5 h-5 animate-spin" />
-          Infecter un Fuyard (Code)
-        </button>
       </div>
 
       {/* Clavier Tactile Plein Écran pour la Capture */}
@@ -192,7 +172,7 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
                 setShowKeypad(false);
                 setEnteredCode('');
               }}
-              className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-slate-300 active-press"
+              className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-slate-300 active-press hover:bg-white/20"
             >
               <X className="w-5 h-5" />
             </button>
@@ -241,6 +221,22 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
           </div>
         </div>
       )}
-    </div>
+
+      {/* Feuilles Tiroir Modales */}
+      <TacticalPerksSheet
+        isOpen={showPerksSheet}
+        onClose={() => setShowPerksSheet(false)}
+        isRunner={false}
+        perks={perks}
+        onUsePerk={onUsePerk}
+        gameActive={roomState.state === 'hunting'}
+      />
+
+      <TacticalJournalSheet
+        isOpen={showJournalSheet}
+        onClose={() => setShowJournalSheet(false)}
+        events={roomState.events}
+      />
+    </>
   );
 };

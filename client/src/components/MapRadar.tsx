@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { PlayerPublic, SonarPingPublic, TacticalEventPublic } from '../hooks/useGameSocket';
+import { PlayerPublic, SonarPingPublic } from '../hooks/useGameSocket';
 import {
   Crosshair,
   Radio,
@@ -8,9 +8,6 @@ import {
   Volume2,
   VolumeX,
   Footprints,
-  ChevronUp,
-  ChevronDown,
-  Activity,
   ArrowUp,
   ArrowDown,
   ArrowLeft,
@@ -27,7 +24,6 @@ interface MapRadarProps {
   currentUserId: string;
   isRunner: boolean;
   lastPings: SonarPingPublic[];
-  events?: TacticalEventPublic[];
   onManualPositionChange?: (lat: number, lng: number) => void;
 }
 
@@ -66,7 +62,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   currentUserId,
   isRunner,
   lastPings,
-  events = [],
   onManualPositionChange,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -74,7 +69,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
   const hasAutoCenteredRef = useRef(false);
 
   const [isMuted, setIsMuted] = useState(soundFX.isMuted);
-  const [showEventDrawer, setShowEventDrawer] = useState(false);
   const [simMode, setSimMode] = useState(false);
 
   // Layers refs
@@ -390,8 +384,8 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         </span>
       </div>
 
-      {/* Commandes Droite : Mute + Recentrer */}
-      <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-2.5">
+      {/* Commandes Droite : Mute + Recentrer (Positionnées au-dessus du dock d'actions) */}
+      <div className="absolute bottom-24 right-4 z-10 flex flex-col gap-2.5 pointer-events-auto">
         <button
           onClick={handleToggleMute}
           className={`w-11 h-11 border rounded-full flex items-center justify-center backdrop-blur-md active-press shadow-lg ${
@@ -414,7 +408,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       </div>
 
       {/* Commandes Gauche : Mode Simulation (Indoor/Test living room) */}
-      <div className="absolute bottom-24 left-4 z-10 flex flex-col gap-2">
+      <div className="absolute bottom-24 left-4 z-10 flex flex-col gap-2 pointer-events-auto">
         <button
           onClick={() => setSimMode(!simMode)}
           className={`px-3 py-2 rounded-xl border text-[10px] font-mono font-bold flex items-center gap-1.5 backdrop-blur-md active-press shadow-lg ${
@@ -424,7 +418,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
           }`}
         >
           <Footprints className="w-3.5 h-3.5" />
-          <span>{simMode ? '🕹️ Simu Active' : '🛰️ GPS Réel'}</span>
+          <span>{simMode ? '🕹️ Simu' : '🛰️ GPS'}</span>
         </button>
 
         {simMode && (
@@ -457,52 +451,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
               </button>
             </div>
             <span className="text-[8px] text-slate-500">ou cliquez sur la carte</span>
-          </div>
-        )}
-      </div>
-
-      {/* Volet Tactique Inférieur (Journal des Événements & Roster) */}
-      <div className="absolute bottom-2 inset-x-4 z-20 pointer-events-auto">
-        <button
-          onClick={() => setShowEventDrawer(!showEventDrawer)}
-          className="w-full bg-black/85 border border-slate-800 px-4 py-2 rounded-xl flex items-center justify-between text-xs text-slate-300 backdrop-blur-md shadow-lg active-press"
-        >
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-400 animate-pulse" />
-            <span className="font-bold uppercase tracking-wider text-[11px]">
-              Journal Tactique ({events.length})
-            </span>
-          </div>
-          {showEventDrawer ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-        </button>
-
-        {showEventDrawer && (
-          <div className="mt-1 bg-black/95 border border-slate-800 rounded-xl p-3 max-h-40 overflow-y-auto flex flex-col gap-1.5 text-xs backdrop-blur-xl animate-in slide-in-from-bottom-2 duration-200">
-            {events.length === 0 ? (
-              <span className="text-slate-500 italic text-[11px] text-center">Aucun événement pour l'instant</span>
-            ) : (
-              events
-                .slice()
-                .reverse()
-                .map((e) => (
-                  <div key={e.id} className="flex items-center justify-between py-1 border-b border-slate-900 text-[11px]">
-                    <span
-                      className={
-                        e.type === 'infected'
-                          ? 'text-amber-400 font-bold'
-                          : e.type === 'perk'
-                          ? 'text-cyan-300 font-semibold'
-                          : e.type === 'zone'
-                          ? 'text-red-400 font-bold'
-                          : 'text-slate-300'
-                      }
-                    >
-                      {e.message}
-                    </span>
-                    <span className="text-[9px] text-slate-500 font-mono ml-2 flex-shrink-0">{e.time}</span>
-                  </div>
-                ))
-            )}
           </div>
         )}
       </div>

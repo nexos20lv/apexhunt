@@ -142,7 +142,6 @@ export const App: React.FC = () => {
         currentUserId={playerId}
         isRunner={isRunner}
         lastPings={roomState.lastPings}
-        events={roomState.events}
         onManualPositionChange={handleManualPositionChange}
       />
 
