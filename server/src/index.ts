@@ -28,7 +28,6 @@ fastify.post('/api/rooms', async (req, reply) => {
   const room = roomManager.createRoom();
   return reply.status(201).send({
     code: room.code,
-    secretCode: room.secretCode,
     settings: room.settings,
   });
 });

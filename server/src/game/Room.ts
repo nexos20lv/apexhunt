@@ -10,6 +10,7 @@ export interface Player {
   accuracy?: number;
   lastSeen: number;
   isOutSideZone?: boolean;
+  secretCode?: string; // Code 4 chiffres attribué si le joueur est fuyard
 }
 
 export interface RoomSettings {
@@ -22,14 +23,13 @@ export interface RoomSettings {
 
 export interface PingResult {
   isGhosted: boolean;
-  ping?: SonarPing;
+  pings: SonarPing[];
   nextPingInSeconds: number;
 }
 
 export class GameRoom {
   public readonly code: string;
   public state: GameState = 'lobby';
-  public secretCode: string;
   public settings: RoomSettings;
   public winner: 'runner' | 'hunters' | null = null;
 
@@ -38,7 +38,7 @@ export class GameRoom {
   private headStartEndTime: number = 0;
   private gameEndTime: number = 0;
   private lastPingTime: number = 0;
-  private lastPingResult: SonarPing | null = null;
+  private lastPingsResult: SonarPing[] = [];
   private simulatedTimeOffset: number = 0;
 
   // Perks
@@ -47,7 +47,6 @@ export class GameRoom {
 
   constructor(code: string, settings?: Partial<RoomSettings>) {
     this.code = code.toUpperCase();
-    this.secretCode = Math.floor(1000 + Math.random() * 9000).toString();
 
     this.settings = {
       durationMinutes: settings?.durationMinutes ?? 30,
@@ -56,6 +55,10 @@ export class GameRoom {
       zoneCenter: settings?.zoneCenter ?? { lat: 48.8584, lng: 2.2945 },
       zoneRadiusMeters: settings?.zoneRadiusMeters ?? 1000,
     };
+  }
+
+  private generateSecretCode(): string {
+    return Math.floor(1000 + Math.random() * 9000).toString();
   }
 
   private now(): number {
@@ -75,7 +78,6 @@ export class GameRoom {
       return existing;
     }
 
-    // Par défaut, le premier joueur (hôte) est runner, les autres hunters
     const defaultRole: PlayerRole =
       this.players.size === 0 ? 'runner' : 'hunter';
 
@@ -85,6 +87,7 @@ export class GameRoom {
       role: defaultRole,
       isHost,
       lastSeen: this.now(),
+      secretCode: defaultRole === 'runner' ? this.generateSecretCode() : undefined,
     };
 
     this.players.set(id, player);
@@ -107,6 +110,11 @@ export class GameRoom {
     const player = this.players.get(id);
     if (player) {
       player.role = role;
+      if (role === 'runner' && !player.secretCode) {
+        player.secretCode = this.generateSecretCode();
+      } else if (role !== 'runner') {
+        player.secretCode = undefined;
+      }
     }
   }
 
@@ -117,7 +125,6 @@ export class GameRoom {
       player.accuracy = accuracy;
       player.lastSeen = this.now();
 
-      // Vérifie si le joueur est hors de la zone de jeu
       if (this.state === 'hunting' || this.state === 'head_start') {
         player.isOutSideZone = !isInsideZone(
           player.position,
@@ -136,6 +143,13 @@ export class GameRoom {
   public startGame() {
     if (this.state !== 'lobby') return;
 
+    // Assure que chaque fuyard a son code unique
+    for (const player of this.players.values()) {
+      if (player.role === 'runner' && !player.secretCode) {
+        player.secretCode = this.generateSecretCode();
+      }
+    }
+
     this.startTime = this.now();
     const headStartMs = this.settings.headStartMinutes * 60 * 1000;
     const durationMs = this.settings.durationMinutes * 60 * 1000;
@@ -152,62 +166,99 @@ export class GameRoom {
   }
 
   public triggerSonarPing(): PingResult {
-    const runner = this.getPlayers().find((p) => p.role === 'runner');
+    const activeRunners = this.getPlayers().filter((p) => p.role === 'runner');
     const interval = this.settings.pingIntervalSeconds;
 
-    if (!runner || !runner.position) {
-      return { isGhosted: false, nextPingInSeconds: interval };
+    if (activeRunners.length === 0) {
+      return { isGhosted: false, pings: [], nextPingInSeconds: interval };
     }
 
-    // Si Ghost Mode est activé
     if (this.ghostModeActive) {
-      this.ghostModeActive = false; // Consommé
-      return { isGhosted: true, nextPingInSeconds: interval };
+      this.ghostModeActive = false;
+      return { isGhosted: true, pings: [], nextPingInSeconds: interval };
     }
 
-    // Si Leurre actif : décalage important
+    const pings: SonarPing[] = [];
     const uncertaintyMin = this.decoyActive ? 150 : 30;
     const uncertaintyMax = this.decoyActive ? 250 : 60;
     this.decoyActive = false;
 
-    const ping = applySonarUncertainty(
-      runner.position,
-      uncertaintyMin,
-      uncertaintyMax
-    );
-    this.lastPingResult = ping;
+    for (const runner of activeRunners) {
+      if (runner.position) {
+        const ping = applySonarUncertainty(
+          runner.position,
+          uncertaintyMin,
+          uncertaintyMax
+        );
+        pings.push(ping);
+      }
+    }
+
+    this.lastPingsResult = pings;
     this.lastPingTime = this.now();
 
     return {
       isGhosted: false,
-      ping,
+      pings,
       nextPingInSeconds: interval,
     };
   }
 
-  public claimCapture(hunterId: string, enteredCode: string): { success: boolean; message: string } {
+  /**
+   * Validation de Capture avec Mode Contagion / Infection :
+   * Le fuyard capturé est converti en Chasseur et rejoint l'escouade de traque !
+   */
+  public claimCapture(
+    hunterId: string,
+    enteredCode: string
+  ): { success: boolean; message: string; allCaptured: boolean; infectedPlayerName?: string } {
     if (this.state !== 'hunting') {
-      return { success: false, message: 'La traque n’est pas active' };
+      return { success: false, message: 'La traque n’est pas active', allCaptured: false };
     }
 
     const hunter = this.players.get(hunterId);
     if (!hunter || hunter.role !== 'hunter') {
-      return { success: false, message: 'Seul un chasseur peut capturer le fuyard' };
+      return { success: false, message: 'Seul un chasseur peut capturer un fuyard', allCaptured: false };
     }
 
-    if (enteredCode.trim() === this.secretCode) {
+    const cleanCode = (enteredCode || '').trim();
+    const capturedRunner = this.getPlayers().find(
+      (p) => p.role === 'runner' && p.secretCode === cleanCode
+    );
+
+    if (!capturedRunner) {
+      return { success: false, message: 'Code incorrect ! Aucun fuyard ne correspond.', allCaptured: false };
+    }
+
+    // Infection : Le fuyard capturé rejoint les chasseurs !
+    capturedRunner.role = 'hunter';
+    capturedRunner.secretCode = undefined;
+
+    const remainingRunners = this.getPlayers().filter((p) => p.role === 'runner');
+
+    if (remainingRunners.length === 0) {
       this.state = 'game_over';
       this.winner = 'hunters';
-      return { success: true, message: 'Fuyard capturé ! Les chasseurs l’emportent !' };
+      return {
+        success: true,
+        message: `Dernier fuyard (${capturedRunner.name}) capturé ! Victoire totale des chasseurs !`,
+        allCaptured: true,
+        infectedPlayerName: capturedRunner.name,
+      };
     }
 
-    return { success: false, message: 'Code incorrect ! Le fuyard s’échappe !' };
+    return {
+      success: true,
+      message: `${capturedRunner.name} a été infecté et devient chasseur ! Reste ${remainingRunners.length} fuyard(s) !`,
+      allCaptured: false,
+      infectedPlayerName: capturedRunner.name,
+    };
   }
 
   public usePerk(playerId: string, perk: 'ghost' | 'decoy'): { success: boolean; message: string } {
     const player = this.players.get(playerId);
     if (!player || player.role !== 'runner') {
-      return { success: false, message: 'Seul le fuyard peut activer cet atout' };
+      return { success: false, message: 'Seul un fuyard peut activer cet atout' };
     }
 
     if (perk === 'ghost') {
@@ -233,13 +284,11 @@ export class GameRoom {
     const currentTime = this.now();
     let stateChanged = false;
 
-    // Transition head_start -> hunting
     if (this.state === 'head_start' && currentTime >= this.headStartEndTime) {
       this.state = 'hunting';
       stateChanged = true;
     }
 
-    // Fin du temps imparti -> Victoire du runner
     if (this.state === 'hunting' && currentTime >= this.gameEndTime) {
       this.state = 'game_over';
       this.winner = 'runner';
@@ -247,7 +296,6 @@ export class GameRoom {
       return { shouldPing: false, stateChanged };
     }
 
-    // Vérification du ping sonar périodique
     if (this.state === 'hunting') {
       const pingIntervalMs = this.settings.pingIntervalSeconds * 1000;
       if (currentTime - this.lastPingTime >= pingIntervalMs) {
@@ -267,10 +315,13 @@ export class GameRoom {
     const isRunner = requestingPlayer?.role === 'runner';
 
     const playerList = Array.from(this.players.values()).map((p) => {
-      // Les chasseurs voient les autres chasseurs en temps réel.
-      // Mais ils ne voient JAMAIS la position directe du runner (seulement via le ping sonar).
+      // Les chasseurs voient tous les chasseurs.
+      // Les fuyards se voient mutuellement pour s'entraider !
+      // Mais un chasseur ne voit JAMAIS la position directe d'un fuyard.
       const showDirectPosition =
-        p.role === 'hunter' || p.id === requestingPlayerId;
+        (p.role === 'hunter' && requestingPlayer?.role === 'hunter') ||
+        (p.role === 'runner' && isRunner) ||
+        p.id === requestingPlayerId;
 
       return {
         id: p.id,
@@ -281,6 +332,9 @@ export class GameRoom {
         position: showDirectPosition ? p.position : undefined,
       };
     });
+
+    const activeRunners = this.getPlayers().filter((p) => p.role === 'runner');
+    const activeHunters = this.getPlayers().filter((p) => p.role === 'hunter');
 
     const currentTime = this.now();
     const remainingTimeSeconds =
@@ -311,12 +365,14 @@ export class GameRoom {
       winner: this.winner,
       settings: this.settings,
       players: playerList,
+      activeRunnersCount: activeRunners.length,
+      activeHuntersCount: activeHunters.length,
       remainingTimeSeconds,
       headStartRemainingSeconds,
       nextPingInSeconds,
-      lastPing: this.lastPingResult,
-      // Seul le fuyard voit son code secret à 4 chiffres sur son écran
-      secretCode: isRunner ? this.secretCode : undefined,
+      lastPings: this.lastPingsResult,
+      // Seul le joueur fuyard voit son propre code secret à 4 chiffres
+      secretCode: isRunner ? requestingPlayer?.secretCode : undefined,
     };
   }
 }

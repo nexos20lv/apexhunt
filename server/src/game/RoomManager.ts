@@ -144,8 +144,13 @@ export class RoomManager {
           type: 'capture_feedback',
           success: result.success,
           message: result.message,
+          allCaptured: result.allCaptured,
         });
-        this.broadcastRoomState(room);
+        this.broadcastRoomState(
+          room,
+          result.success ? 'player_infected' : 'state_update',
+          result
+        );
         break;
       }
 
