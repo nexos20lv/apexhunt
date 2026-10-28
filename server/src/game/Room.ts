@@ -1,6 +1,13 @@
 import { GeoPoint, applySonarUncertainty, isInsideZone, SonarPing } from './geo.js';
 import { PlayerRole, GameState } from '../schemas/ws.js';
 
+export interface PlayerPerks {
+  ghost: boolean; // 1 use max
+  decoy: boolean; // 1 use max
+  sonarFlash: boolean; // 1 use max (hunter)
+  triangulation: boolean; // 1 use max (hunter)
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -11,6 +18,7 @@ export interface Player {
   lastSeen: number;
   isOutSideZone?: boolean;
   secretCode?: string;
+  perks: PlayerPerks;
 }
 
 export interface RoomSettings {
@@ -49,9 +57,10 @@ export class GameRoom {
   private lastPingsResult: SonarPing[] = [];
   private simulatedTimeOffset: number = 0;
 
-  // Perks
+  // Active temporary perk effects
   private ghostModeActive: boolean = false;
   private decoyActive: boolean = false;
+  private triangulationActive: boolean = false;
 
   constructor(code: string, settings?: Partial<RoomSettings>) {
     this.code = code.toUpperCase();
@@ -103,7 +112,6 @@ export class GameRoom {
     const defaultRole: PlayerRole =
       this.players.size === 0 ? 'runner' : 'hunter';
 
-    // Position initiale garantie (autour du centre de la zone pour être immédiatement visible par tous)
     const angle = Math.random() * 2 * Math.PI;
     const distanceMeters = 25 + Math.random() * 50;
     const initialPosition: GeoPoint = {
@@ -122,6 +130,12 @@ export class GameRoom {
       position: initialPosition,
       lastSeen: this.now(),
       secretCode: defaultRole === 'runner' ? this.generateSecretCode() : undefined,
+      perks: {
+        ghost: true,
+        decoy: true,
+        sonarFlash: true,
+        triangulation: true,
+      },
     };
 
     this.players.set(id, player);
@@ -186,6 +200,13 @@ export class GameRoom {
       if (player.role === 'runner' && !player.secretCode) {
         player.secretCode = this.generateSecretCode();
       }
+      // Réinitialise les bonus pour 1 utilisation
+      player.perks = {
+        ghost: true,
+        decoy: true,
+        sonarFlash: true,
+        triangulation: true,
+      };
     }
 
     this.startTime = this.now();
@@ -215,17 +236,27 @@ export class GameRoom {
 
     if (this.ghostModeActive) {
       this.ghostModeActive = false;
-      this.addEvent('👻 Ghost Mode actif : Ping sonar masqué !', 'perk');
+      this.addEvent('👻 Ghost Mode actif : Ping sonar masqué pour les fuyards !', 'perk');
       return { isGhosted: true, pings: [], nextPingInSeconds: interval };
     }
 
     const pings: SonarPing[] = [];
-    const uncertaintyMin = this.decoyActive ? 150 : 30;
-    const uncertaintyMax = this.decoyActive ? 250 : 60;
+
+    // Détermination de l'incertitude selon les bonus actifs
+    let uncertaintyMin = 30;
+    let uncertaintyMax = 60;
 
     if (this.decoyActive) {
-      this.addEvent('📡 Faux Leurre activé par un fuyard !', 'perk');
+      uncertaintyMin = 180;
+      uncertaintyMax = 260;
       this.decoyActive = false;
+      this.addEvent('📡 Faux Leurre activé par un fuyard !', 'perk');
+    } else if (this.triangulationActive) {
+      // Triangulation chasseur : précision chirurgicale 10-15m
+      uncertaintyMin = 10;
+      uncertaintyMax = 15;
+      this.triangulationActive = false;
+      this.addEvent('🎯 Triangulation appliquée : Ping haute précision (~12m) !', 'perk');
     }
 
     for (const runner of activeRunners) {
@@ -275,6 +306,9 @@ export class GameRoom {
     // Infection
     capturedRunner.role = 'hunter';
     capturedRunner.secretCode = undefined;
+    // Le nouveau chasseur hérite de ses bonus chasseur
+    capturedRunner.perks.sonarFlash = true;
+    capturedRunner.perks.triangulation = true;
 
     const remainingRunners = this.getPlayers().filter((p) => p.role === 'runner');
 
@@ -300,23 +334,81 @@ export class GameRoom {
     };
   }
 
-  public usePerk(playerId: string, perk: 'ghost' | 'decoy'): { success: boolean; message: string } {
+  /**
+   * Utilisation de bonus (1 seule fois par partie pour chaque joueur)
+   */
+  public usePerk(
+    playerId: string,
+    perk: 'ghost' | 'decoy' | 'sonar_flash' | 'triangulation'
+  ): { success: boolean; message: string; pingTriggered?: boolean; pingResult?: PingResult } {
+    if (this.state !== 'hunting') {
+      return { success: false, message: 'La traque n’est pas encore active' };
+    }
+
     const player = this.players.get(playerId);
-    if (!player || player.role !== 'runner') {
-      return { success: false, message: 'Seul un fuyard peut activer cet atout' };
+    if (!player) {
+      return { success: false, message: 'Joueur introuvable' };
     }
 
-    if (perk === 'ghost') {
-      this.ghostModeActive = true;
-      this.addEvent(`${player.name} a activé Ghost Mode`, 'perk');
-      return { success: true, message: 'Ghost Mode activé : le prochain ping sera brouillé !' };
-    } else if (perk === 'decoy') {
-      this.decoyActive = true;
-      this.addEvent(`${player.name} a déployé un Leurre GPS`, 'perk');
-      return { success: true, message: 'Leurre déployé : le prochain ping émettra un faux signal !' };
+    // --- BONUS FUYARD ---
+    if (perk === 'ghost' || perk === 'decoy') {
+      if (player.role !== 'runner') {
+        return { success: false, message: 'Ce bonus est réservé aux fuyards' };
+      }
+
+      if (perk === 'ghost') {
+        if (!player.perks.ghost) {
+          return { success: false, message: 'Ghost Mode déjà utilisé (1x par partie) !' };
+        }
+        player.perks.ghost = false;
+        this.ghostModeActive = true;
+        this.addEvent(`👻 ${player.name} a activé Ghost Mode (prochain ping masqué) !`, 'perk');
+        return { success: true, message: 'Ghost Mode activé : le prochain ping sera masqué !' };
+      } else {
+        if (!player.perks.decoy) {
+          return { success: false, message: 'Leurre déjà utilisé (1x par partie) !' };
+        }
+        player.perks.decoy = false;
+        this.decoyActive = true;
+        this.addEvent(`📡 ${player.name} a activé un Faux Leurre GPS !`, 'perk');
+        return { success: true, message: 'Leurre déployé : le prochain ping enverra un faux signal !' };
+      }
     }
 
-    return { success: false, message: 'Atout inconnu' };
+    // --- BONUS CHASSEUR ---
+    if (perk === 'sonar_flash' || perk === 'triangulation') {
+      if (player.role !== 'hunter') {
+        return { success: false, message: 'Ce bonus est réservé aux chasseurs' };
+      }
+
+      if (perk === 'sonar_flash') {
+        if (!player.perks.sonarFlash) {
+          return { success: false, message: 'Sonar Flash déjà utilisé (1x par partie) !' };
+        }
+        player.perks.sonarFlash = false;
+        this.addEvent(`⚡ ${player.name} a forcé un Sonar Flash Immédiat !`, 'perk');
+        const pingResult = this.triggerSonarPing();
+        return {
+          success: true,
+          message: '⚡ Sonar Flash immédiat déclenché sur tous les fuyards !',
+          pingTriggered: true,
+          pingResult,
+        };
+      } else {
+        if (!player.perks.triangulation) {
+          return { success: false, message: 'Triangulation déjà utilisée (1x par partie) !' };
+        }
+        player.perks.triangulation = false;
+        this.triangulationActive = true;
+        this.addEvent(`🎯 ${player.name} a activé la Triangulation Précise (10m) !`, 'perk');
+        return {
+          success: true,
+          message: 'Triangulation activée : le prochain ping sera ultra-précis (~10m) !',
+        };
+      }
+    }
+
+    return { success: false, message: 'Bonus inconnu' };
   }
 
   public tick(): {
@@ -362,14 +454,9 @@ export class GameRoom {
       : undefined;
 
     const isRunner = requestingPlayer?.role === 'runner';
-
     const isHunter = requestingPlayer?.role === 'hunter';
 
     const playerList = Array.from(this.players.values()).map((p) => {
-      // 1. Un joueur voit toujours sa propre position
-      // 2. Les chasseurs voient TOUS les autres chasseurs en temps réel
-      // 3. Les fuyards voient TOUS les autres fuyards en temps réel
-      // 4. Dans le lobby ou à la fin, tout le monde voit tout le monde
       const showDirectPosition =
         p.id === requestingPlayerId ||
         (isHunter && p.role === 'hunter') ||
@@ -428,6 +515,7 @@ export class GameRoom {
       nextPingInSeconds,
       lastPings: this.lastPingsResult,
       events: this.events.slice(-10),
+      myPerks: requestingPlayer?.perks,
       secretCode: isRunner ? requestingPlayer?.secretCode : undefined,
     };
   }

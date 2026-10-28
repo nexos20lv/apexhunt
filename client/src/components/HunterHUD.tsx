@@ -1,20 +1,29 @@
 import React, { useState } from 'react';
 import { RoomPublicState } from '../hooks/useGameSocket';
-import { Radio, Crosshair, KeyRound, Clock, X, Check, Users } from 'lucide-react';
+import { Radio, Crosshair, KeyRound, Clock, X, Check, Users, Zap, Target } from 'lucide-react';
 import { soundFX } from '../audio/soundfx';
 
 interface HunterHUDProps {
   roomState: RoomPublicState;
   onClaimCapture: (code: string) => void;
+  onUsePerk: (perk: 'sonar_flash' | 'triangulation') => void;
   userPosition: { lat: number; lng: number } | null;
 }
 
 export const HunterHUD: React.FC<HunterHUDProps> = ({
   roomState,
   onClaimCapture,
+  onUsePerk,
 }) => {
   const [showKeypad, setShowKeypad] = useState(false);
   const [enteredCode, setEnteredCode] = useState('');
+
+  const perks = roomState.myPerks || {
+    ghost: true,
+    decoy: true,
+    sonarFlash: true,
+    triangulation: true,
+  };
 
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -103,13 +112,67 @@ export const HunterHUD: React.FC<HunterHUDProps> = ({
         </div>
       </div>
 
-      {/* Bouton de Saisie de Capture */}
-      <div className="pointer-events-auto mb-2">
+      {/* Section Basse : Bonus Chasseur (1x) + Bouton d'Infection */}
+      <div className="pointer-events-auto flex flex-col gap-3 mb-2">
+        {/* Atouts Tactiques Chasseur (1x par partie) */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => perks.sonarFlash && onUsePerk('sonar_flash')}
+            disabled={!perks.sonarFlash || roomState.state !== 'hunting'}
+            className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
+              perks.sonarFlash && roomState.state === 'hunting'
+                ? 'bg-black/85 border border-amber-500/50 hover:border-amber-400 text-amber-300 active-press cursor-pointer'
+                : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Zap className={`w-4 h-4 ${perks.sonarFlash ? 'text-amber-400 animate-pulse' : 'text-slate-600'}`} />
+              <span className="text-xs font-bold uppercase tracking-wider">Sonar Flash</span>
+            </div>
+            <span className="text-[9px] text-slate-400">Scan immédiat fuyards</span>
+            <span
+              className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
+                perks.sonarFlash
+                  ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
+                  : 'bg-slate-900 text-slate-600 border border-slate-800'
+              }`}
+            >
+              {perks.sonarFlash ? '⚡ 1x Disponible' : '🔒 Épuisé'}
+            </span>
+          </button>
+
+          <button
+            onClick={() => perks.triangulation && onUsePerk('triangulation')}
+            disabled={!perks.triangulation || roomState.state !== 'hunting'}
+            className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
+              perks.triangulation && roomState.state === 'hunting'
+                ? 'bg-black/85 border border-red-500/50 hover:border-red-400 text-red-300 active-press cursor-pointer'
+                : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Target className={`w-4 h-4 ${perks.triangulation ? 'text-red-400' : 'text-slate-600'}`} />
+              <span className="text-xs font-bold uppercase tracking-wider">Triangulation</span>
+            </div>
+            <span className="text-[9px] text-slate-400">Précision chirurgicale (~10m)</span>
+            <span
+              className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
+                perks.triangulation
+                  ? 'bg-red-950/80 text-red-300 border border-red-500/40'
+                  : 'bg-slate-900 text-slate-600 border border-slate-800'
+              }`}
+            >
+              {perks.triangulation ? '🎯 1x Disponible' : '🔒 Épuisé'}
+            </span>
+          </button>
+        </div>
+
+        {/* Bouton de Saisie de Capture */}
         <button
           onClick={() => setShowKeypad(true)}
-          className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold py-4 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_25px_rgba(239,68,68,0.4)] active-press uppercase tracking-wider font-orbitron text-sm border border-red-400/30"
+          className="w-full bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-bold py-3.5 px-6 rounded-2xl flex items-center justify-center gap-3 shadow-[0_0_25px_rgba(239,68,68,0.4)] active-press uppercase tracking-wider font-orbitron text-sm border border-red-400/30"
         >
-          <Crosshair className="w-6 h-6 animate-spin" />
+          <Crosshair className="w-5 h-5 animate-spin" />
           Infecter un Fuyard (Code)
         </button>
       </div>

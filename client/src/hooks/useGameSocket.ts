@@ -24,6 +24,13 @@ export interface TacticalEventPublic {
   type: 'start' | 'ping' | 'perk' | 'infected' | 'zone';
 }
 
+export interface PlayerPerks {
+  ghost: boolean;
+  decoy: boolean;
+  sonarFlash: boolean;
+  triangulation: boolean;
+}
+
 export interface RoomPublicState {
   code: string;
   state: 'lobby' | 'head_start' | 'hunting' | 'game_over';
@@ -44,6 +51,7 @@ export interface RoomPublicState {
   lastPings: SonarPingPublic[];
   events?: TacticalEventPublic[];
   secretCode?: string;
+  myPerks?: PlayerPerks;
 }
 
 export function useGameSocket() {
@@ -255,7 +263,7 @@ export function useGameSocket() {
   );
 
   const usePerk = useCallback(
-    (perk: 'ghost' | 'decoy') => {
+    (perk: 'ghost' | 'decoy' | 'sonar_flash' | 'triangulation') => {
       sendMessage({ type: 'use_perk', perk });
     },
     [sendMessage]

@@ -101,4 +101,64 @@ describe('GameRoom State Machine & Infection / Multi-Runner Mode', () => {
     const pingResult = room.triggerSonarPing();
     expect(pingResult.pings).toHaveLength(2);
   });
+
+  it('gère les atouts/bonus à usage unique (1x par partie) pour les fuyards', () => {
+    room.addPlayer('r1', 'Runner1', true);
+    room.addPlayer('h1', 'Hunter1', false);
+    room.setPlayerRole('r1', 'runner');
+    room.setPlayerRole('h1', 'hunter');
+
+    room.startGame();
+    room.advanceTime(10000);
+
+    // 1ère utilisation de Ghost : Succès
+    const ghost1 = room.usePerk('r1', 'ghost');
+    expect(ghost1.success).toBe(true);
+
+    // 2ème utilisation de Ghost : Rejetée (usage unique)
+    const ghost2 = room.usePerk('r1', 'ghost');
+    expect(ghost2.success).toBe(false);
+    expect(ghost2.message).toContain('déjà utilisé');
+
+    // Le fuyard ne peut pas utiliser un atout de chasseur
+    const hunterPerk = room.usePerk('r1', 'sonar_flash');
+    expect(hunterPerk.success).toBe(false);
+    expect(hunterPerk.message).toContain('réservé aux chasseurs');
+  });
+
+  it('gère les atouts/bonus à usage unique (1x par partie) pour les chasseurs (sonar_flash & triangulation)', () => {
+    room.addPlayer('r1', 'Runner1', true);
+    room.addPlayer('h1', 'Hunter1', false);
+    room.setPlayerRole('r1', 'runner');
+    room.setPlayerRole('h1', 'hunter');
+
+    room.startGame();
+    room.advanceTime(10000);
+    room.updatePlayerPosition('r1', 48.8584, 2.2945);
+
+    // 1ère utilisation de Sonar Flash par le chasseur : Succès et déclenchement d'un ping immédiat
+    const flash1 = room.usePerk('h1', 'sonar_flash');
+    expect(flash1.success).toBe(true);
+    expect(flash1.pingTriggered).toBe(true);
+    expect(flash1.pingResult?.pings).toHaveLength(1);
+
+    // 2ème utilisation de Sonar Flash : Rejetée
+    const flash2 = room.usePerk('h1', 'sonar_flash');
+    expect(flash2.success).toBe(false);
+    expect(flash2.message).toContain('déjà utilisé');
+
+    // 1ère utilisation de Triangulation par le chasseur : Succès
+    const tri1 = room.usePerk('h1', 'triangulation');
+    expect(tri1.success).toBe(true);
+
+    // 2ème utilisation de Triangulation : Rejetée
+    const tri2 = room.usePerk('h1', 'triangulation');
+    expect(tri2.success).toBe(false);
+    expect(tri2.message).toContain('déjà utilisé');
+
+    // Le chasseur ne peut pas utiliser un atout de fuyard
+    const runnerPerk = room.usePerk('h1', 'ghost');
+    expect(runnerPerk.success).toBe(false);
+    expect(runnerPerk.message).toContain('réservé aux fuyards');
+  });
 });

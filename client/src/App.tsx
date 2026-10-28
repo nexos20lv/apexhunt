@@ -157,6 +157,7 @@ export const App: React.FC = () => {
         <HunterHUD
           roomState={roomState}
           onClaimCapture={claimCapture}
+          onUsePerk={usePerk}
           userPosition={position}
         />
       )}

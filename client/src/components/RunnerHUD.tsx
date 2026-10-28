@@ -14,6 +14,12 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
   isOutSideZone,
 }) => {
   const secretCode = roomState.secretCode || '----';
+  const perks = roomState.myPerks || {
+    ghost: true,
+    decoy: true,
+    sonarFlash: true,
+    triangulation: true,
+  };
 
   const formatTime = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -100,24 +106,56 @@ export const RunnerHUD: React.FC<RunnerHUDProps> = ({
         </div>
       </div>
 
-      {/* Barre d'Atouts Tactiques */}
+      {/* Barre d'Atouts Tactiques Fuyard (Bonus 1x par partie) */}
       <div className="pointer-events-auto grid grid-cols-2 gap-3 mb-2">
         <button
-          onClick={() => onUsePerk('ghost')}
-          className="bg-black/85 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 rounded-xl p-3.5 flex flex-col items-center gap-1 backdrop-blur-lg active-press transition shadow-lg"
+          onClick={() => perks.ghost && onUsePerk('ghost')}
+          disabled={!perks.ghost}
+          className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
+            perks.ghost
+              ? 'bg-black/85 border border-cyan-500/50 hover:border-cyan-400 text-cyan-300 active-press cursor-pointer'
+              : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+          }`}
         >
-          <EyeOff className="w-5 h-5 text-cyan-400" />
-          <span className="text-xs font-bold uppercase tracking-wider">Ghost Mode</span>
+          <div className="flex items-center gap-1.5">
+            <EyeOff className={`w-4 h-4 ${perks.ghost ? 'text-cyan-400' : 'text-slate-600'}`} />
+            <span className="text-xs font-bold uppercase tracking-wider">Ghost Mode</span>
+          </div>
           <span className="text-[9px] text-slate-400">Masque le 1er ping</span>
+          <span
+            className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
+              perks.ghost
+                ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/40'
+                : 'bg-slate-900 text-slate-600 border border-slate-800'
+            }`}
+          >
+            {perks.ghost ? '⚡ 1x Disponible' : '🔒 Épuisé'}
+          </span>
         </button>
 
         <button
-          onClick={() => onUsePerk('decoy')}
-          className="bg-black/85 border border-amber-500/50 hover:border-amber-400 text-amber-300 rounded-xl p-3.5 flex flex-col items-center gap-1 backdrop-blur-lg active-press transition shadow-lg"
+          onClick={() => perks.decoy && onUsePerk('decoy')}
+          disabled={!perks.decoy}
+          className={`rounded-xl p-3 flex flex-col items-center gap-1 backdrop-blur-lg transition shadow-lg ${
+            perks.decoy
+              ? 'bg-black/85 border border-amber-500/50 hover:border-amber-400 text-amber-300 active-press cursor-pointer'
+              : 'bg-black/50 border border-slate-800 text-slate-600 opacity-50 cursor-not-allowed'
+          }`}
         >
-          <Radio className="w-5 h-5 text-amber-400" />
-          <span className="text-xs font-bold uppercase tracking-wider">Leurre GPS</span>
+          <div className="flex items-center gap-1.5">
+            <Radio className={`w-4 h-4 ${perks.decoy ? 'text-amber-400' : 'text-slate-600'}`} />
+            <span className="text-xs font-bold uppercase tracking-wider">Leurre GPS</span>
+          </div>
           <span className="text-[9px] text-slate-400">Faux ping à 200m</span>
+          <span
+            className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider mt-0.5 ${
+              perks.decoy
+                ? 'bg-amber-950/80 text-amber-300 border border-amber-500/40'
+                : 'bg-slate-900 text-slate-600 border border-slate-800'
+            }`}
+          >
+            {perks.decoy ? '⚡ 1x Disponible' : '🔒 Épuisé'}
+          </span>
         </button>
       </div>
     </div>

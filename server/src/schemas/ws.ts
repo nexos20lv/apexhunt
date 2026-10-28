@@ -37,7 +37,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('use_perk'),
-    perk: z.enum(['ghost', 'decoy']),
+    perk: z.enum(['ghost', 'decoy', 'sonar_flash', 'triangulation']),
   }),
   z.object({
     type: z.literal('update_settings'),

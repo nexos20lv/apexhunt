@@ -144,7 +144,11 @@ export class RoomManager {
           success: result.success,
           message: result.message,
         });
-        this.broadcastRoomState(room);
+        if (result.success && result.pingTriggered && result.pingResult) {
+          this.broadcastRoomState(room, 'sonar_ping', result.pingResult);
+        } else {
+          this.broadcastRoomState(room);
+        }
         break;
       }
 
