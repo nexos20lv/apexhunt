@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import { PlayerPublic, SonarPingPublic } from '../hooks/useGameSocket';
-import { Crosshair } from 'lucide-react';
+import { Crosshair, Radio } from 'lucide-react';
 
 interface MapRadarProps {
   userPosition: { lat: number; lng: number } | null;
@@ -26,6 +26,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const hasAutoCenteredRef = useRef(false);
 
   // Layers refs
   const zoneCircleRef = useRef<L.Circle | null>(null);
@@ -46,11 +47,12 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       attributionControl: false,
     });
 
-    // Tuiles OpenStreetMap haute performance avec filtre Dark OLED tactique (100% gratuit, 0 API key)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Tuiles OpenStreetMap 100% gratuites sans API Key avec filtre Dark OLED tactique
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
+      subdomains: ['a', 'b', 'c'],
       className: 'tactical-dark-tiles',
-      attribution: '© OpenStreetMap',
+      attribution: '© OpenStreetMap contributors',
     }).addTo(map);
 
     teammatesLayerRef.current = L.layerGroup().addTo(map);
@@ -64,7 +66,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     };
   }, []);
 
-  // Zone de jeu
+  // Zone de jeu circulaire
   useEffect(() => {
     if (!mapRef.current) return;
 
@@ -83,11 +85,18 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     }
   }, [zoneCenter, zoneRadiusMeters]);
 
-  // Position du joueur courant
+  // Position du joueur courant + centrage automatique initial
   useEffect(() => {
     if (!mapRef.current || !userPosition) return;
 
     const userLatLng = L.latLng(userPosition.lat, userPosition.lng);
+
+    // Auto-centre la première fois que le GPS obtient le signal
+    if (!hasAutoCenteredRef.current) {
+      mapRef.current.setView(userLatLng, 16, { animate: true });
+      hasAutoCenteredRef.current = true;
+    }
+
     const markerColor = isRunner ? '#06b6d4' : '#f59e0b';
     const markerHtml = `
       <div style="
@@ -97,7 +106,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
         background: ${markerColor};
         border: 2px solid #ffffff;
         border-radius: 50%;
-        box-shadow: 0 0 12px ${markerColor};
+        box-shadow: 0 0 14px ${markerColor};
       "></div>
     `;
 
@@ -115,7 +124,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
       userMarkerRef.current = L.marker(userLatLng, { icon }).addTo(mapRef.current);
     }
 
-    if (accuracy && accuracy < 60) {
+    if (accuracy && accuracy < 80) {
       if (userAccCircleRef.current) {
         userAccCircleRef.current.setLatLng(userLatLng);
         userAccCircleRef.current.setRadius(accuracy);
@@ -138,7 +147,6 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     teammatesLayerRef.current.clearLayers();
 
     players.forEach((player) => {
-      // Si c'est un autre joueur et que sa position est partagée (même camp)
       if (player.id !== currentUserId && player.position) {
         const isTeammate =
           (isRunner && player.role === 'runner') ||
@@ -185,7 +193,7 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     });
   }, [players, currentUserId, isRunner]);
 
-  // Mise à jour de tous les pings sonar actifs
+  // Pings Sonar actifs
   useEffect(() => {
     if (!mapRef.current || !pingsLayerRef.current) return;
     pingsLayerRef.current.clearLayers();
@@ -213,9 +221,24 @@ export const MapRadar: React.FC<MapRadarProps> = ({
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
+      {/* Badge Indicateur GPS Temps Réel */}
+      <div className="absolute top-16 left-4 z-10 flex items-center gap-2 bg-black/85 border border-slate-700/60 backdrop-blur-md px-3 py-1.5 rounded-full text-[10px] font-mono shadow-lg">
+        <Radio
+          className={`w-3.5 h-3.5 ${
+            userPosition ? 'text-emerald-400 animate-pulse' : 'text-amber-400 animate-ping'
+          }`}
+        />
+        <span className={userPosition ? 'text-emerald-300 font-semibold' : 'text-amber-300 font-semibold'}>
+          {userPosition
+            ? `GPS FIX (~${accuracy ?? 5}m)`
+            : 'RECHERCHE DU SIGNAL GPS...'}
+        </span>
+      </div>
+
+      {/* Bouton Recentrer Tactique */}
       <button
         onClick={handleRecenter}
-        className="absolute bottom-6 right-4 z-10 w-12 h-12 bg-black/80 border border-cyan-500/40 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-500/20"
+        className="absolute bottom-6 right-4 z-10 w-12 h-12 bg-black/85 border border-cyan-500/40 rounded-full flex items-center justify-center text-cyan-400 backdrop-blur-md active-press shadow-lg shadow-cyan-500/20"
         title="Recentrer sur ma position"
       >
         <Crosshair className="w-6 h-6 animate-pulse" />

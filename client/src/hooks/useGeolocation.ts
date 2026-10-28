@@ -55,13 +55,32 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
     setIsTracking(true);
     setError(null);
 
+    // Récupère une première position immédiate
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords: GeoCoordinates = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        const acc = Math.round(pos.coords.accuracy);
+        setPosition(coords);
+        setAccuracy(acc);
+        if (callbackRef.current) callbackRef.current(coords, acc);
+      },
+      (err) => {
+        console.warn('Échec première géolocalisation:', err.message);
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+
+    // Écoute les déplacements en continu
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const coords: GeoCoordinates = {
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
         };
-        const acc = pos.coords.accuracy;
+        const acc = Math.round(pos.coords.accuracy);
 
         setPosition(coords);
         setAccuracy(acc);
@@ -71,20 +90,18 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
         }
       },
       (err) => {
-        let msg = 'Erreur GPS';
+        let msg = 'Signal GPS introuvable';
         if (err.code === err.PERMISSION_DENIED) {
-          msg = 'Autorisation GPS refusée. Veuillez activer la localisation.';
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          msg = 'Signal GPS introuvable';
+          msg = 'Autorisation GPS refusée. Veuillez activer la localisation dans les réglages.';
         } else if (err.code === err.TIMEOUT) {
-          msg = 'Délai d’attente GPS dépassé';
+          msg = 'Recherche du signal satellite GPS en cours...';
         }
         setError(msg);
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 1500,
-        timeout: 15000,
+        maximumAge: 1000,
+        timeout: 10000,
       }
     );
   }, [acquireWakeLock]);
@@ -98,11 +115,13 @@ export function useGeolocation(onPositionUpdate?: (pos: GeoCoordinates, accuracy
     setIsTracking(false);
   }, [releaseWakeLock]);
 
+  // Démarre automatiquement le tracking GPS dès l'ouverture de l'application
   useEffect(() => {
+    startTracking();
     return () => {
       stopTracking();
     };
-  }, [stopTracking]);
+  }, [startTracking, stopTracking]);
 
   return {
     position,

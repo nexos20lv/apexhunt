@@ -47,6 +47,25 @@ export const App: React.FC = () => {
   const currentPlayer = roomState?.players.find((p) => p.id === playerId);
   const isRunner = currentPlayer?.role === 'runner';
 
+  // Centre automatiquement la zone de jeu sur la position GPS réelle de l'hôte
+  useEffect(() => {
+    if (position && currentPlayer?.isHost && roomState?.state === 'lobby') {
+      if (
+        Math.abs(roomState.settings.zoneCenter.lat - 48.8584) < 0.001 &&
+        Math.abs(roomState.settings.zoneCenter.lng - 2.2945) < 0.001
+      ) {
+        updateSettings({ zoneCenter: position });
+      }
+    }
+  }, [position, currentPlayer?.isHost, roomState?.state, roomState?.settings.zoneCenter, updateSettings]);
+
+  const handleStartGame = () => {
+    if (position && currentPlayer?.isHost) {
+      updateSettings({ zoneCenter: position });
+    }
+    startGame();
+  };
+
   // Si pas dans une room ou en phase lobby
   if (!roomState || roomState.state === 'lobby') {
     return (
@@ -55,7 +74,7 @@ export const App: React.FC = () => {
         currentUserId={playerId}
         onJoin={joinRoom}
         onSetRole={setRole}
-        onStartGame={startGame}
+        onStartGame={handleStartGame}
         onUpdateSettings={updateSettings}
         onRequestGPS={startTracking}
         gpsActive={gpsActive}
