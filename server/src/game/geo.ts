@@ -76,7 +76,7 @@ export function applySonarUncertainty(
   return {
     lat: realPoint.lat + deltaLat,
     lng: realPoint.lng + deltaLng,
-    radiusMeters: Math.round(distance * 1.15),
+    radiusMeters: Math.max(40, Math.round(distance * 1.25)),
     timestamp: Date.now(),
   };
 }
